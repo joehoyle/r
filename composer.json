@@ -1,0 +1,13 @@
+{
+    "name": "joehoyle/r",
+    "description": "WordPress Themes for React",
+    "authors": [
+        {
+            "name": "Joe Hoyle",
+            "email": "joehoyle@gmail.com"
+        }
+    ],
+    "require": {
+        "axy/sourcemap": "^0.1.5"
+    }
+}
