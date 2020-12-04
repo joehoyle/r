@@ -19,23 +19,35 @@ import {
 
 function Page() {
 	const rewrite = WPData.rewrite;
-
 	return <Router>
 		<Helmet>
 			<meta charSet="utf-8" />
+			<title>My Theme</title>
 		</Helmet>
 		<Switch>
-			{Object.entries(rewrite).map(([regex, query]) => (
+			{Object.entries(rewrite).map(([regex, query]) => {
 				// @ts-ignore
-				<Route key={regex} path={new RegExp(regex)} render={props => <MatchedRoute {...props} regex={regex} query={query} />} />
-			))}
+				return <Route key={regex} path={new RegExp(regex)} render={props => {
+					if ( query ) {
+						return <MatchedRoute {...props} regex={regex} query={query} />
+					} else {
+						// Empty query means this can not be handled with front-end routing, reload.
+						if ( isSSR ) {
+							throw new Error( 'no-routes' );
+						} else {
+							window.location.href = props.match.url;
+						}
+					}
+				} } />
+
+			})}
 			<Route component={NotFound} />
 		</Switch>
 	</Router>;
 }
 
 function Router({ children }) {
-	return isSSR ? <StaticRouter location={window.location.href}>
+	return isSSR ? <StaticRouter location={window.location.pathname}>
 		{children}
 	</StaticRouter> : <BrowserRouter>
 			{children}
@@ -58,7 +70,6 @@ export interface TemplateProps {
 		code: number,
 		message: string,
 	},
-	templateHierarchy?: string[],
 	[s: string]: any,
 }
 
@@ -92,45 +103,56 @@ function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: strin
 		return () => document.removeEventListener('click', MakeLocal)
 	}, []);
 
-	let componentProps: TemplateProps = { loading: true };
 	const query = { ...props.query, match: props.match.params, regex: props.regex };
 	const request = getRequestForQuery( query );
-	let templateDataProps;
-	let templates = [];
 
+	return <Data
+		{...request}
+		render={ ( { loading, error, data } ) => {
+			if ( loading ) {
+				return <h1>Loading...</h1>;
+			}
+			if ( error ) {
+				return <span>{ JSON.stringify( error ) }</span>
+			}
+			const templateDataProps = getPropsForQuery( query, data );
+			const templates = getTemplatesForQuery( query, data );
+			let Comp: FunctionComponent = () => <h1>No Template</h1>
+
+			if (templates && templates[0]) {
+				const template = templates[0]
+				if (!TemplateMap[template]) {
+					throw new Error(`Template ${template} not found: `)
+				}
+				Comp = TemplateMap[template];
+			}
+
+			return <Layout>
+				<Comp loading={loading} error={error} {...templateDataProps}></Comp>
+			</Layout>
+		} }
+	/>
+}
+
+function Data( props: { uri: string, params: {}, render: ( props: { loading: boolean, data: any, error: null } ) => JSX.Element } ) : JSX.Element {
+	let componentProps = { loading: true, error: undefined, data: undefined };
 
 	if ( isSSR ) {
-		const response = getSSR( request.uri, request.params );
-		templateDataProps = getPropsForQuery( query, response );
-		templates = getTemplatesForQuery( query, response );
+		componentProps.data = getSSR( props.uri, props.params );
+		componentProps.loading = false;
 	} else {
-		const [componentProps, setData] = useState<TemplateProps>({ loading: true });
+		const [p, setData] = useState<typeof componentProps>(componentProps);
+		componentProps = p;
 		useEffect(() => {
 			async function getData() {
-				const data = await getPropsForQuery({ ...props.query, match: props.match.params, regex: props.regex });
-				setData({ props: data.props, templateHierarchy: data.templateHierarchy, loading: false, error: undefined });
+				const response = await get( props.uri, props.params );
+				setData({ loading: false, data: response, error: undefined });
 			}
 			getData();
 		}, [])
 	}
 
-	let Comp: FunctionComponent = () => <h1>Loading...</h1>;
-	// If there's an error, or no data found (empty list), show a 404
-	// if ((!componentProps.loading && componentProps.error) || (!componentProps.loading && Array.isArray(data.data) && data.data.length === 0)) {
-	// 	Comp = NotFound;
-	// }
-
-	if (templates && templates[0]) {
-		const template = templates[0]
-		if (!TemplateMap[template]) {
-			throw new Error(`Template ${template} not found: `)
-		}
-		Comp = TemplateMap[templates[0]];
-	}
-
-	return <Layout>
-		<Comp loading={componentProps.loading} error={componentProps.error} {...templateDataProps} />
-	</Layout>
+	return props.render( componentProps );
 }
 
 render(() => <Page />);

@@ -1,8 +1,10 @@
 import ReactDOM from 'react-dom';
 import ReactDOMServer from 'react-dom/server';
+import { Helmet } from 'react-helmet';
 
 export const ENV_BROWSER = 'browser';
 export const ENV_SERVER = 'server';
+export const Head = Helmet;
 
 // Store current script reference in case we need it later, as currentScript
 // is only available on the first (synchronous) run.
@@ -26,7 +28,21 @@ export default function render( getComponent: ( environment: string ) => React.R
 
 	switch ( environment ) {
 		case ENV_SERVER:
-			global && global.print( ReactDOMServer.renderToStaticMarkup( component ) );
+			const body = ReactDOMServer.renderToStaticMarkup( component );
+			const helmet = Helmet.renderStatic();
+			PHP.render(
+				body,
+				{
+					meta: helmet.meta.toString(),
+					bodyAttributes: helmet.bodyAttributes.toString(),
+					htmlAttributes: helmet.htmlAttributes.toString(),
+					link: helmet.link.toString(),
+					noscript: helmet.noscript.toString(),
+					script: helmet.script.toString(),
+					style: helmet.style.toString(),
+					title: helmet.title.toString(),
+				},
+			);
 			break;
 
 		case ENV_BROWSER: {

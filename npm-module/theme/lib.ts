@@ -10,10 +10,6 @@ interface Query {
 }
 
 export function getRequestForQuery( query: Query ) {
-	let props: { [a: string]: any } = {};
-
-	let templateHierarchy: string[] = [ 'NotFound' ];
-
 	for ( const param in query.params ) {
 		const value = query.params[ param ];
 		if ( typeof value !== 'string' || value.indexOf( '$' ) !== 0 ) {
@@ -21,7 +17,8 @@ export function getRequestForQuery( query: Query ) {
 		}
 		const paramNumber = Number( value.replace( '$', '' ) );
 
-		query.params[ param ] = query.match[ paramNumber ];
+		// Param replacements are 1-based, but match positions are zero-based.
+		query.params[ param ] = query.match[ paramNumber - 1 ];
 	}
 
 	return {
@@ -31,22 +28,34 @@ export function getRequestForQuery( query: Query ) {
 }
 
 export function getTemplatesForQuery( query: Query, response: any ) {
-	let props: { [a: string]: any } = {};
-
 	let templateHierarchy: string[] = [ 'NotFound' ];
 	// Special case for homepage.
-	if ( query.regex === '^\/?$' ) {
+	//if ( query.regex === '^\/?$' ) {
 		templateHierarchy = [ 'Single' ];
-	}
+	//}
 
 	return templateHierarchy;
 }
 
 export function getPropsForQuery( query: Query, response: any ) {
 	const templates = getTemplatesForQuery( query, response );
-	return response;
+	if ( isSingular( query ) ) {
+		if ( Array.isArray( response ) ) {
+			response = response[0];
+		}
+	}
+	return {
+		post: response,
+	}
 }
 
+export function isSingular( query: Query ) {
+	if ( query.params.slug || query.params.id ) {
+		return true;
+	}
+
+	return false;
+}
 
 export async function get(uri: string, params: { [a: string]: string | number | boolean } = {}) {
 	if ( isSSR ) {
@@ -59,7 +68,7 @@ export async function get(uri: string, params: { [a: string]: string | number | 
 	}
 }
 
-export function getSSR(uri: string, params: { [a: string]: string | number | boolean } = {}) {
+export function getSSR(uri: string, params: { [a: string]: string | number | boolean } = {}) : any {
 	const body = PHP.rest_request( uri, params );
 	return body
 }
