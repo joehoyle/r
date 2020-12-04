@@ -7,6 +7,6 @@ require_once dirname( dirname( __DIR__ ) ) . '/inc/namespace.php';
 	<head>
 	</head>
 	<body>
-		<?php R\render( get_stylesheet_directory() ); ?>
+		<?php R\server_render(); ?>
 	</body>
 </html>

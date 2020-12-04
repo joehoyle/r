@@ -16,3 +16,7 @@ interface Post {
 		rendered: string,
 	}
 }
+
+declare const PHP: {
+	rest_request: ( string: string, params: { [param: string ] : any } ) => null
+}

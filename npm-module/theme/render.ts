@@ -30,7 +30,7 @@ export default function render( getComponent: ( environment: string ) => React.R
 			break;
 
 		case ENV_BROWSER: {
-			const container = renderedScript && renderedScript.dataset.container && document.getElementById( renderedScript.dataset.container );
+			const container = document.getElementById( 'root' );
 			if ( ! container ) {
 				return;
 			}
@@ -53,6 +53,6 @@ export default function render( getComponent: ( environment: string ) => React.R
 		}
 
 		default:
-			throw new Error( `Unknown environment \"${ environment }\"` );
+			throw new Error( `Unknown environment "${ environment }"` );
 	}
 }

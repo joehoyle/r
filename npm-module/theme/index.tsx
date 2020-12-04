@@ -5,7 +5,7 @@ import Single from '../../../Single';
 import Layout from '../../../Layout';
 import Archive from '../../../Archive';
 import NotFound from '../../../404';
-import { getPropsForQuery } from './lib';
+import { getPropsForQuery, getRequestForQuery, getSSR, get, getTemplatesForQuery } from './lib';
 import render from './render';
 
 import {
@@ -25,21 +25,21 @@ function Page() {
 			<meta charSet="utf-8" />
 		</Helmet>
 		<Switch>
-			{Object.entries( rewrite ).map( ( [ regex, query ] ) => (
+			{Object.entries(rewrite).map(([regex, query]) => (
 				// @ts-ignore
-				<Route key={regex} path={new RegExp(regex)} render={props => <MatchedRoute {...props} regex={ regex } query={ query } />} />
+				<Route key={regex} path={new RegExp(regex)} render={props => <MatchedRoute {...props} regex={regex} query={query} />} />
 			))}
-			<Route component={ NotFound } />
+			<Route component={NotFound} />
 		</Switch>
 	</Router>;
 }
 
-function Router( { children } ) {
-	return isSSR ? <StaticRouter location={ window.location.href }>
-		{ children }
+function Router({ children }) {
+	return isSSR ? <StaticRouter location={window.location.href}>
+		{children}
 	</StaticRouter> : <BrowserRouter>
-		{ children }
-	</BrowserRouter>
+			{children}
+		</BrowserRouter>
 }
 
 interface MatchedRouteProps {
@@ -68,57 +68,69 @@ const TemplateMap: { [s: string]: FunctionComponent<any> } = {
 	NotFound: NotFound,
 }
 
-function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: string ]: string }>) {
+function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: string]: string }>) {
 	let history = useHistory();
-	useEffect( () => {
+	useEffect(() => {
 		// Make all clicks in the route use react-router
-		const MakeLocal = ( e: Event ) => {
-			let a: HTMLAnchorElement|null = null;
-			if ( e.target && (e.target as HTMLElement).nodeName === 'A' ) {
+		const MakeLocal = (e: Event) => {
+			let a: HTMLAnchorElement | null = null;
+			if (e.target && (e.target as HTMLElement).nodeName === 'A') {
 				a = (e.target as HTMLAnchorElement)
 			}
-			if ( e.target && (e.target as HTMLElement).closest( 'a' ) ) {
-				a = (e.target as HTMLElement).closest( 'a' )
+			if (e.target && (e.target as HTMLElement).closest('a')) {
+				a = (e.target as HTMLElement).closest('a')
 			}
-			if ( ! a ) {
+			if (!a) {
 				return;
 			}
-			const url = new URL( a.href );
-			history.push( url.pathname + url.search )
+			const url = new URL(a.href);
+			history.push(url.pathname + url.search)
 			e.preventDefault();
 			e.stopPropagation();
 		}
-		document.addEventListener( 'click', MakeLocal )
-		return () => document.removeEventListener( 'click', MakeLocal )
-	}, [] );
+		document.addEventListener('click', MakeLocal)
+		return () => document.removeEventListener('click', MakeLocal)
+	}, []);
+
+	let componentProps: TemplateProps = { loading: true };
+	const query = { ...props.query, match: props.match.params, regex: props.regex };
+	const request = getRequestForQuery( query );
+	let templateDataProps;
+	let templates = [];
 
 
-	const [data, setData] = useState<TemplateProps>({ loading: true });
-	useEffect(() => {
-		async function getData() {
-			const data = await getPropsForQuery( { ...props.query, match: props.match.params, regex: props.regex } );
-			setData({ props: data.props, templateHierarchy: data.templateHierarchy, loading: false, error: undefined });
-		}
-		getData();
-	}, [])
+	if ( isSSR ) {
+		const response = getSSR( request.uri, request.params );
+		templateDataProps = getPropsForQuery( query, response );
+		templates = getTemplatesForQuery( query, response );
+	} else {
+		const [componentProps, setData] = useState<TemplateProps>({ loading: true });
+		useEffect(() => {
+			async function getData() {
+				const data = await getPropsForQuery({ ...props.query, match: props.match.params, regex: props.regex });
+				setData({ props: data.props, templateHierarchy: data.templateHierarchy, loading: false, error: undefined });
+			}
+			getData();
+		}, [])
+	}
 
 	let Comp: FunctionComponent = () => <h1>Loading...</h1>;
 	// If there's an error, or no data found (empty list), show a 404
-	if ( ( ! data.loading && data.error ) || ( ! data.loading && Array.isArray( data.data ) && data.data.length === 0 ) ) {
-		Comp = NotFound;
-	}
+	// if ((!componentProps.loading && componentProps.error) || (!componentProps.loading && Array.isArray(data.data) && data.data.length === 0)) {
+	// 	Comp = NotFound;
+	// }
 
-	if ( data.templateHierarchy && data.templateHierarchy[0] ) {
-		const template = data.templateHierarchy[0]
-		if ( ! TemplateMap[ template ] ) {
-			throw new Error( `Template ${ template } not found: `)
+	if (templates && templates[0]) {
+		const template = templates[0]
+		if (!TemplateMap[template]) {
+			throw new Error(`Template ${template} not found: `)
 		}
-		Comp = TemplateMap[ data.templateHierarchy[0] ];
+		Comp = TemplateMap[templates[0]];
 	}
 
 	return <Layout>
-		<Comp loading={ data.loading } error={ data.error } {...data.props } />
+		<Comp loading={componentProps.loading} error={componentProps.error} {...templateDataProps} />
 	</Layout>
 }
 
-render( () => <Page /> );
+render(() => <Page />);

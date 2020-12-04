@@ -9,7 +9,7 @@ interface Query {
 	regex: string,
 }
 
-export async function getPropsForQuery( query: Query ) {
+export function getRequestForQuery( query: Query ) {
 	let props: { [a: string]: any } = {};
 
 	let templateHierarchy: string[] = [ 'NotFound' ];
@@ -24,23 +24,44 @@ export async function getPropsForQuery( query: Query ) {
 		query.params[ param ] = query.match[ paramNumber ];
 	}
 
+	return {
+		uri: query.uri,
+		params: query.params
+	}
+}
+
+export function getTemplatesForQuery( query: Query, response: any ) {
+	let props: { [a: string]: any } = {};
+
+	let templateHierarchy: string[] = [ 'NotFound' ];
 	// Special case for homepage.
-	if ( query.regex === '^\\/?$' ) {
+	if ( query.regex === '^\/?$' ) {
 		templateHierarchy = [ 'Single' ];
 	}
 
-	props.post = await get( query.uri, query.params )
-
-	return {
-		props,
-		templateHierarchy,
-	};
+	return templateHierarchy;
 }
 
+export function getPropsForQuery( query: Query, response: any ) {
+	const templates = getTemplatesForQuery( query, response );
+	return response;
+}
+
+
 export async function get(uri: string, params: { [a: string]: string | number | boolean } = {}) {
-	const r = await fetch( `${uri}${params && `?${encodeUri(params)}`}`);
-	const json = await r.json();
-	return json;
+	if ( isSSR ) {
+		const body = PHP.rest_request( uri, params );
+		return Promise.resolve( body )
+	} else {
+		const r = await fetch( `${uri}${params && `?${encodeUri(params)}`}`);
+		const json = await r.json();
+		return json;
+	}
+}
+
+export function getSSR(uri: string, params: { [a: string]: string | number | boolean } = {}) {
+	const body = PHP.rest_request( uri, params );
+	return body
 }
 
 function encodeUri(obj: { [a: string]: string | number | boolean }) {

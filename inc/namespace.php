@@ -6,6 +6,7 @@ use Exception;
 use V8Js;
 use V8JsScriptException;
 use axy\sourcemap\SourceMap;
+use WP_REST_Request;
 
 function bootstrap() : void {
 	register_theme_directory( dirname( __DIR__ ) . '/theme-directory/' );
@@ -129,7 +130,7 @@ function get_window_object() :array {
 			'port'     => $port,
 			'protocol' => is_ssl() ? 'https:' : 'http:',
 			'search'   => $query ? '?' . $query : '',
-			'href'     => ( is_ssl() ? 'https://' : 'http://' ) . ( $port ? $_SERVER['HTTP_HOST'] . ':' . $port : $_SERVER['HTTP_HOST'] ) . (  $query ? '?' . $query : '' ),
+			'href'     => ( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST'] . '/' . (  $query ? '?' . $query : '' ),
 		],
 		'process' => [
 			'env' => 'development',
@@ -150,9 +151,9 @@ function get_window_object() :array {
  *     @type boolean $async Should we load the script asynchronously on the frontend?
  * }
  */
-function render( $directory, $options = [] ) {
-	$entrypoint_url = get_template_directory_uri() . '/build/es/index.js';
-	$entrypoint_url = 'http://localhost:8081/lib/index.js';
+function render() : void {
+	$entrypoint_url = get_stylesheet_directory_uri() . '/build/iife/index.js';
+	//$entrypoint_url = 'http://localhost:8081/lib/index.js';
 	// In development, don't render on the server unless enabled.
 	$script = sprintf( '<script type="module" src="%s"></script>', esc_attr( $entrypoint_url ) );
 	echo '<div id="root"></div>';
@@ -161,25 +162,10 @@ function render( $directory, $options = [] ) {
 	echo $script;
 }
 
-function server_render( $directory, $options = [] ) {
-	$options = wp_parse_args( $options, [
-		'handle'    => basename( $directory ),
-		'container' => 'root',
-		'async'     => true,
-	] );
-	$handle = $options['handle'];
+function server_render() : void {
 
 	// Load the app source.
-	$entrypoint_path = $directory . '/build/cjs/index.js';
-
-	// Check for v8js
-	if ( ! class_exists( 'V8Js' ) ) {
-		trigger_error( 'react-wp-ssr requires the v8js extension, skipping server-side rendering.', E_USER_NOTICE );
-
-		printf( '<div id="%s"></div>', esc_attr( $options['container'] ) );
-
-		return;
-	}
+	$entrypoint_path = get_stylesheet_directory_uri() . '/build/cjs/index.js';
 
 	// Create stubs.
 	$window = wp_json_encode( get_window_object() );
@@ -205,7 +191,14 @@ delete sleep;
 END;
 
 	$v8 = new V8Js();
-
+	$directory = get_stylesheet_directory();
+	$v8->rest_request = function ( string $path, $params ) {
+		$path = '/' . str_replace( get_rest_url(), '', $path );
+		$request = new WP_REST_Request( 'GET', $path );
+		$request->set_query_params( (array) $params );
+		$response = rest_do_request( $request );
+		return $response->get_data();
+	};
 	$v8->setModuleLoader( function ( string $path ) use ( $directory ) {
 		$dir = $directory . '/build/';
 		$file_path = $dir . '/' . $path;
@@ -215,18 +208,6 @@ END;
 		return '';
 		throw new Exception( sprintf( 'Unable to find file at %s', esc_html( $file_path ) ) );
 	} );
-
-	/**
-	 * Filter functions available to the server-side rendering.
-	 *
-	 * @param array $functions Map of function name => callback. Exposed on the global `PHP` object.
-	 * @param string $handle Script being rendered.
-	 * @param array $options Options passed to render.
-	 */
-	$functions = apply_filters( 'reactwpssr.functions', [], $handle, $options );
-	foreach ( $functions as $name => $function ) {
-		$v8->$name = $function;
-	}
 
 	$source = file_get_contents( $entrypoint_path );
 
@@ -240,8 +221,7 @@ END;
 		$output = ob_get_clean();
 
 		printf(
-			'<div id="%s" data-rendered="">%s</div>',
-			esc_attr( $options['container'] ),
+			'<div id="root" data-rendered="">%s</div>',
 			$output
 		);
 	} catch ( V8JsScriptException $e ) {
@@ -257,7 +237,7 @@ END;
 		// }
 
 		// Error, so render an empty container.
-		printf( '<div id="%s"></div>', esc_attr( $options['container'] ) );
+		print( '<div id="root"></div>' );
 	}
 }
 
