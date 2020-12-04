@@ -4,6 +4,7 @@ const rollup = require('rollup');
 const typescript = require('@rollup/plugin-typescript');
 const commonjs = require('@rollup/plugin-commonjs');
 const nodeResolve = require('@rollup/plugin-node-resolve').nodeResolve;
+const css = require( 'rollup-plugin-css-only' );
 
 const target = process.argv[ 2 ];
 const watch = process.argv.indexOf( '--watch' );
@@ -33,6 +34,9 @@ const inputOptions = {
 		nodeResolve({
 			browser: true,
 		}),
+		css({
+			output: 'styles.css'
+		})
 	],
 };
 const browserOutputOptions = {
