@@ -5,6 +5,7 @@ const { createServer } = require('vite')
 const viteReact = require('vite-plugin-react')
 
 const watch = process.argv.indexOf( '--watch' ) > -1;
+const hmr = process.argv.indexOf( '--hmr' ) > -1;
 
 const entrypoint = `${__dirname}/../theme/index.tsx`;
 
@@ -34,7 +35,7 @@ esbuild.build({
 	}
 });
 
-if ( watch ) {
+if ( hmr ) {
 	createServer({
 		configureServer: [ viteReact.configureServer ],
 		transforms: viteReact.transforms,
