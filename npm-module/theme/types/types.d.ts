@@ -1,5 +1,8 @@
 declare const WPData: {
-	rewrite: string
+	rewrite: string,
+	requests: {
+		[url: string]: any
+	}
 }
 
 declare const global: {
@@ -19,5 +22,5 @@ interface Post {
 
 declare const PHP: {
 	rest_request: ( string: string, params: { [param: string ] : any } ) => null,
-	render: ( body: string, helmet: any ) => null
+	render: ( body: string, helmet: any ) => null,
 }

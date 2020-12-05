@@ -62,10 +62,25 @@ export async function get(uri: string, params: { [a: string]: string | number | 
 		const body = PHP.rest_request( uri, params );
 		return Promise.resolve( body )
 	} else {
-		const r = await fetch( `${uri}${params && `?${encodeUri(params)}`}`);
+		// Check the preload cache first
+		const url = `${uri}?${encodeUri(params)}`;
+		if ( WPData.requests[ url ] ) {
+			return Promise.resolve( WPData.requests[ url ] )
+		}
+		const r = await fetch( url );
 		const json = await r.json();
 		return json;
 	}
+}
+
+export function getCached(uri: string, params: { [a: string]: string | number | boolean } = {}) {
+	// Check the preload cache first
+	const url = `${uri}?${encodeUri(params)}`;
+	if ( WPData.requests[ url ] ) {
+		return WPData.requests[ url ]
+	}
+
+	return null;
 }
 
 export function getSSR(uri: string, params: { [a: string]: string | number | boolean } = {}) : any {

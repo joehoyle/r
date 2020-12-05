@@ -1,11 +1,11 @@
 import React, { FunctionComponent } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useLayoutEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import Single from '../../../Single';
 import Layout from '../../../Layout';
 import Archive from '../../../Archive';
 import NotFound from '../../../404';
-import { getPropsForQuery, getRequestForQuery, getSSR, get, getTemplatesForQuery } from './lib';
+import { getPropsForQuery, getRequestForQuery, getSSR, get, getTemplatesForQuery, getCached } from './lib';
 import render from './render';
 
 import {
@@ -26,6 +26,8 @@ function Page() {
 		</Helmet>
 		<Switch>
 			{Object.entries(rewrite).map(([regex, query]) => {
+				// Make sure start caret regex have slashes appended.
+				regex = regex.replace( '^', '^/' );
 				// @ts-ignore
 				return <Route key={regex} path={new RegExp(regex)} render={props => {
 					if ( query ) {
@@ -39,7 +41,6 @@ function Page() {
 						}
 					}
 				} } />
-
 			})}
 			<Route component={NotFound} />
 		</Switch>
@@ -140,10 +141,13 @@ function Data( props: { uri: string, params: {}, render: ( props: { loading: boo
 	if ( isSSR ) {
 		componentProps.data = getSSR( props.uri, props.params );
 		componentProps.loading = false;
+	} else if ( getCached( props.uri, props.params ) ) {
+		componentProps.data = getCached( props.uri, props.params );
+		componentProps.loading = false;
 	} else {
 		const [p, setData] = useState<typeof componentProps>(componentProps);
 		componentProps = p;
-		useEffect(() => {
+		useLayoutEffect(() => {
 			async function getData() {
 				const response = await get( props.uri, props.params );
 				setData({ loading: false, data: response, error: undefined });
@@ -151,7 +155,6 @@ function Data( props: { uri: string, params: {}, render: ( props: { loading: boo
 			getData();
 		}, [])
 	}
-
 	return props.render( componentProps );
 }
 
