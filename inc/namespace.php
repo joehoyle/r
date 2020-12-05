@@ -8,15 +8,14 @@ use V8JsScriptException;
 use axy\sourcemap\SourceMap;
 use WP_REST_Request;
 
-const SSR = false;
+const SSR = true;
 
 function bootstrap() : void {
 	register_theme_directory( dirname( __DIR__ ) . '/theme-directory/' );
 	if ( SSR ) {
-		add_action( 'wp_loaded', __NAMESPACE__ . '\\on_wp_loaded' );
+		add_action( 'do_parse_request', __NAMESPACE__ . '\\on_do_parse_request' );
 	} else {
 		add_action( 'template_redirect', __NAMESPACE__ . '\\render' );
-
 	}
 }
 
@@ -28,11 +27,11 @@ function get_init_data() : array {
 	];
 }
 
-function on_wp_loaded() : void {
+function on_do_parse_request( bool $should_parse ) : bool {
 	$output = server_render();
 	// Null response means the react-app should not handle this request.
 	if ( $output === null ) {
-		return;
+		return $should_parse;
 	}
 
 	echo $output;
@@ -45,9 +44,8 @@ function get_rewrites() {
 	global $wp_rewrite;
 	/** @var array<string, string> */
 	$rules = $wp_rewrite->wp_rewrite_rules();
+	//print_r( $rules );
 	$rest_rules = array_map( __NAMESPACE__ . '\\get_rest_api_query_for_rewrite_query', $rules );
-	// Strip all rewrites that don't have REST queries.
-	// $rest_rules = array_filter( $rest_rules );
 	// Add homepage
 	if ( get_option( 'show_on_front' ) === 'page' ) {
 		// Push homepage rule on to start of array
@@ -59,7 +57,7 @@ function get_rewrites() {
 			'wp-admin/' => null,
 		] + $rest_rules;
 	}
-
+	//print_r( $rest_rules );
 	return $rest_rules;
 }
 
@@ -90,10 +88,13 @@ function get_rest_api_query_for_rewrite_query( string $query ) : ?array {
 		'tag' => 'tag',
 		'pagename' => 'slug',
 		'attachment' => 'slug',
+		'name' => 'slug',
 		'page_id' => 'id',
 		'page' => '',
 		//'author_name' => ''
-		//'year'
+		'year' => '',
+		'monthnum' => '',
+		'day' => '',
 	];
 
 	foreach ( $parts as $query_var => $replacement_num ) {
@@ -153,7 +154,7 @@ function get_window_object() : array {
 			'port'     => 80,
 			'protocol' => is_ssl() ? 'https:' : 'http:',
 			'search'   => $query ? '?' . $query : '',
-			'href'     => ( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST'] . '/' . (  $query ? '?' . $query : '' ),
+			'href'     => ( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST'] . '/' . ( $query ? '?' . $query : '' ),
 		],
 		'process' => [
 			'env' => 'development',
@@ -186,38 +187,14 @@ function render() : void {
 }
 
 function server_render() : ?string {
-
 	// Load the app source.
-	$entrypoint_path = get_stylesheet_directory_uri() . '/build/index.js';
+	$entrypoint_url = get_stylesheet_directory_uri() . '/build/index.js';
+	$entrypoint_path = get_stylesheet_directory() . '/build/index.js';
 
 	// Create stubs.
 	$window = get_window_object();
-	$window_json = json_encode( $window );
-	$setup = <<<END
-// Set up browser-compatible APIs.
-var window = this;
-Object.assign( window, $window_json );
-var console = {
-	warn: PHP.log,
-	error: PHP.log,
-	log: ( print => it => print( JSON.stringify( it, null, 4 ) + "\\n" ) )( PHP.log )
-};
-window.setTimeout = window.clearTimeout = () => {};
-
-// Expose more globals we might want.
-var global = global || this,
-	self = self || this;
-var isSSR = true;
-
-// Remove default top-level APIs.
-delete exit;
-delete sleep;
-END;
-
-	// TODO: Snapshot support
-
-	$v8 = new V8Js();
-	$directory = get_stylesheet_directory();
+	$v8 = get_v8( $window, $entrypoint_path, true );
+	$start = microtime( true );
 	$request_cache = [];
 
 	$v8->rest_request = function ( string $path, $params ) use ( &$request_cache ) {
@@ -231,15 +208,6 @@ END;
 		$request_cache[ $cache_path ] = $data;
 		return $data;
 	};
-	$v8->setModuleLoader( function ( string $path ) use ( $directory ) {
-		$dir = $directory . '/build';
-		$file_path = $dir . '/' . $path;
-		if ( file_exists( $file_path ) ) {
-			return file_get_contents( $file_path );
-		}
-		return '';
-		throw new Exception( sprintf( 'Unable to find file at %s', esc_html( $file_path ) ) );
-	} );
 	$render = null;
 	$v8->render = function ( string $body, $helmet ) use ( &$render ) {
 		$render = [
@@ -248,19 +216,13 @@ END;
 		];
 	};
 
-	$v8->log = function ( string $message ) {
-		error_log( $message );
+	$v8->log = function ( string $type, array $message ) {
+		error_log( "SSR $type: " . implode( ", ", $message ) );
 	};
 
-	$source = file_get_contents( $entrypoint_path );
-
 	try {
-		// Run the setup.
-		$v8->executeString( $setup, 'ssrBootstrap' );
-
-		// Then, execute the script.
 		ob_start();
-		$v8->executeString( $source, 'index.js' );
+		$v8->executeString( 'window.render()' );
 		$output = ob_get_clean();
 
 		if ( ! $render ) {
@@ -281,7 +243,7 @@ END;
 		if ( strpos( $e->getMessage(), 'no-routes' ) ) {
 			return null;
 		}
-		exit;
+
 		//if ( WP_DEBUG ) {
 			$offsets = [
 				'header' => $header_offset,
@@ -297,7 +259,83 @@ END;
 		return '';
 	}
 
+	error_log( ( microtime( true ) - $start ) * 1000 );
+
 	return $output;
+}
+
+/**
+ * Get a V8 Snapshot of the entry script.
+ *
+ * @return string
+ */
+function get_v8_snapshot( string $setup, string $entrypoint_path ) : string {
+	$snapshot_version = filemtime( $entrypoint_path );
+	$snapshot_path = sys_get_temp_dir() . '/' . sha1( $entrypoint_path . $snapshot_version ) . '.r-v8-snapshot';
+	if ( true || ! file_exists( $snapshot_path ) ) {
+		$source = file_get_contents( $entrypoint_path );
+		/** @var string|false */
+		$snapshot = V8Js::createSnapshot( $setup . $source );
+		file_put_contents( $snapshot_path, $snapshot );
+	} else {
+		$snapshot = file_get_contents( $snapshot_path );
+	}
+
+	return $snapshot;
+}
+
+/**
+ * Get the V8 object with app loaded.
+ *
+ */
+function get_v8( array $window_object, string $entrypoint_path, bool $use_snapshot = false ) : V8Js {
+	$setup = get_bootstrap_script( $window_object );
+	if ( $use_snapshot ) {
+		$snapshot = get_v8_snapshot( $setup, $entrypoint_path );
+		$v8 = new V8Js( 'PHP', [], [], true, $snapshot );
+	} else {
+		$v8 = new V8Js();
+		$v8->executeString( $setup, 'bootstrap.js' );
+		$v8->executeString( file_get_contents( $entrypoint_path ), 'index.js' );
+	}
+
+	return $v8;
+}
+
+/**
+ * Get the v8 bootstrap script
+ *
+ * @param array $window_object
+ */
+function get_bootstrap_script( array $window_object ) : string {
+	$window_json = json_encode( $window_object );
+	$setup = <<<END
+// Set up browser-compatible APIs.
+var window = this;
+function serverLog( type, ...args ) {
+	if ( typeof PHP !== 'undefined' ) {
+		PHP.log( type, args );
+	}
+}
+Object.assign( window, $window_json );
+var console = {
+	warn: ( ...args ) => serverLog( 'warn', ...args ),
+	error: ( ...args ) => serverLog( 'warn', ...args ),
+	log: ( ...args ) => serverLog( 'warn', ...args ),
+};
+window.setTimeout = window.clearTimeout = () => {};
+
+// Expose more globals we might want.
+var global = global || this,
+	self = self || this;
+var isSSR = true;
+
+// Remove default top-level APIs.l;-po
+delete exit;
+delete sleep;
+delete var_dump;
+END;
+	return $setup;
 }
 
 /**

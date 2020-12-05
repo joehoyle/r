@@ -158,4 +158,11 @@ function Data( props: { uri: string, params: {}, render: ( props: { loading: boo
 	return props.render( componentProps );
 }
 
-render(() => <Page />);
+
+if ( isSSR ) {
+	// In SSR, provider a render function rather than self-executing.
+	// This is so we can create v8 snapshots that don't cause side-effects.
+	window.render = () => render(() => <Page />);
+} else {
+	render(() => <Page />);
+}
