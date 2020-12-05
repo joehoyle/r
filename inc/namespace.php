@@ -8,14 +8,35 @@ use V8JsScriptException;
 use axy\sourcemap\SourceMap;
 use WP_REST_Request;
 
+const SSR = false;
+
 function bootstrap() : void {
 	register_theme_directory( dirname( __DIR__ ) . '/theme-directory/' );
+	if ( SSR ) {
+		add_action( 'wp_loaded', __NAMESPACE__ . '\\on_wp_loaded' );
+	} else {
+		add_action( 'template_redirect', __NAMESPACE__ . '\\render' );
+
+	}
 }
 
 function get_init_data() : array {
 	return [
 		'rewrite' => get_rewrites(),
+		'url'     => home_url( '/' ),
+		'requests' => (object) [],
 	];
+}
+
+function on_wp_loaded() : void {
+	$output = server_render();
+	// Null response means the react-app should not handle this request.
+	if ( $output === null ) {
+		return;
+	}
+
+	echo $output;
+	exit;
 }
 /**
  * @return list<array{ uri: string, params: array<string, string>}>
@@ -26,8 +47,7 @@ function get_rewrites() {
 	$rules = $wp_rewrite->wp_rewrite_rules();
 	$rest_rules = array_map( __NAMESPACE__ . '\\get_rest_api_query_for_rewrite_query', $rules );
 	// Strip all rewrites that don't have REST queries.
-	$rest_rules = array_filter( $rest_rules );
-
+	// $rest_rules = array_filter( $rest_rules );
 	// Add homepage
 	if ( get_option( 'show_on_front' ) === 'page' ) {
 		// Push homepage rule on to start of array
@@ -35,7 +55,8 @@ function get_rewrites() {
 			'^/?$' => [
 				'uri' => get_rest_url( null, '/wp/v2/pages/' . get_option( 'page_on_front' ) ),
 				'params' => [],
-			]
+			],
+			'wp-admin/' => null,
 		] + $rest_rules;
 	}
 
@@ -77,7 +98,10 @@ function get_rest_api_query_for_rewrite_query( string $query ) : ?array {
 
 	foreach ( $parts as $query_var => $replacement_num ) {
 		if ( isset( $public_query_var_to_rest_param_map[ $query_var ] ) ) {
-			$rest_api_query['params'][ $public_query_var_to_rest_param_map[ $query_var ] ] = $replacement_num;
+			// Can be empty string, which means allowed by ignored.
+			if ( $public_query_var_to_rest_param_map[ $query_var ] ) {
+				$rest_api_query['params'][ $public_query_var_to_rest_param_map[ $query_var ] ] = $replacement_num;
+			}
 		} else {
 			//var_dump( 'Not found for query var ', $query_var, $query );
 			return null;
@@ -115,19 +139,18 @@ function get_script_data( $handle ) {
  *
  * @return array `window`-compatible object.
  */
-function get_window_object() :array {
+function get_window_object() : array {
 	list( $path ) = explode( '?', $_SERVER['REQUEST_URI'] );
 	$port = $_SERVER['SERVER_PORT'];
-	$port = $port !== '80' && $port !== '443' ? (int) $port : '';
 	$query = $_SERVER['QUERY_STRING'];
 	return [
 		'document' => [],
 		'location' => [
 			'hash'     => '',
-			'host'     => $port ? $_SERVER['HTTP_HOST'] . ':' . $port : $_SERVER['HTTP_HOST'],
+			'host'     => $_SERVER['HTTP_HOST'],
 			'hostname' => $_SERVER['HTTP_HOST'],
 			'pathname' => $path,
-			'port'     => $port,
+			'port'     => 80,
 			'protocol' => is_ssl() ? 'https:' : 'http:',
 			'search'   => $query ? '?' . $query : '',
 			'href'     => ( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST'] . '/' . (  $query ? '?' . $query : '' ),
@@ -152,31 +175,32 @@ function get_window_object() :array {
  * }
  */
 function render() : void {
-	$entrypoint_url = get_stylesheet_directory_uri() . '/build/iife/index.js';
-	//$entrypoint_url = 'http://localhost:8081/lib/index.js';
-	// In development, don't render on the server unless enabled.
-	$script = sprintf( '<script type="module" src="%s"></script>', esc_attr( $entrypoint_url ) );
-	echo '<div id="root"></div>';
-	echo '<script>window.HMR_WEBSOCKET_URL = "ws://localhost:8081";</script>';
-	echo '<script>var WPData = ' . wp_json_encode( get_init_data() ) . '</script>';
-	echo $script;
+	$render = [];
+	// Add all the REST API request caches to the WPDAta
+	$render['body'] = '<div id="root"></div>';
+	$render['style'] = get_stylesheet_directory_uri() . '/build/index.css';
+	$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+	$render['data'] = get_init_data();
+	ob_start();
+	include( locate_template( 'index.php' ) );
 }
 
-function server_render() : void {
+function server_render() : ?string {
 
 	// Load the app source.
-	$entrypoint_path = get_stylesheet_directory_uri() . '/build/cjs/index.js';
+	$entrypoint_path = get_stylesheet_directory_uri() . '/build/index.js';
 
 	// Create stubs.
-	$window = wp_json_encode( get_window_object() );
+	$window = get_window_object();
+	$window_json = json_encode( $window );
 	$setup = <<<END
 // Set up browser-compatible APIs.
 var window = this;
-Object.assign( window, $window );
+Object.assign( window, $window_json );
 var console = {
-	warn: print,
-	error: print,
-	log: ( print => it => print( JSON.stringify( it ) ) )( print )
+	warn: PHP.log,
+	error: PHP.log,
+	log: ( print => it => print( JSON.stringify( it, null, 4 ) + "\\n" ) )( PHP.log )
 };
 window.setTimeout = window.clearTimeout = () => {};
 
@@ -190,17 +214,25 @@ delete exit;
 delete sleep;
 END;
 
+	// TODO: Snapshot support
+
 	$v8 = new V8Js();
 	$directory = get_stylesheet_directory();
-	$v8->rest_request = function ( string $path, $params ) {
-		$path = '/' . str_replace( get_rest_url(), '', $path );
-		$request = new WP_REST_Request( 'GET', $path );
-		$request->set_query_params( (array) $params );
+	$request_cache = [];
+
+	$v8->rest_request = function ( string $path, $params ) use ( &$request_cache ) {
+		$relative_path = '/' . str_replace( get_rest_url(), '', $path );
+		$params = (array) $params;
+		$cache_path = $path . '?' . http_build_query( $params );
+		$request = new WP_REST_Request( 'GET', $relative_path );
+		$request->set_query_params( $params );
 		$response = rest_do_request( $request );
-		return $response->get_data();
+		$data = $response->get_data();
+		$request_cache[ $cache_path ] = $data;
+		return $data;
 	};
 	$v8->setModuleLoader( function ( string $path ) use ( $directory ) {
-		$dir = $directory . '/build/';
+		$dir = $directory . '/build';
 		$file_path = $dir . '/' . $path;
 		if ( file_exists( $file_path ) ) {
 			return file_get_contents( $file_path );
@@ -208,6 +240,17 @@ END;
 		return '';
 		throw new Exception( sprintf( 'Unable to find file at %s', esc_html( $file_path ) ) );
 	} );
+	$render = null;
+	$v8->render = function ( string $body, $helmet ) use ( &$render ) {
+		$render = [
+			'body' => $body,
+			'helmet' => $helmet,
+		];
+	};
+
+	$v8->log = function ( string $message ) {
+		error_log( $message );
+	};
 
 	$source = file_get_contents( $entrypoint_path );
 
@@ -220,11 +263,25 @@ END;
 		$v8->executeString( $source, 'index.js' );
 		$output = ob_get_clean();
 
-		printf(
-			'<div id="root" data-rendered="">%s</div>',
-			$output
-		);
+		if ( ! $render ) {
+			return 'No app was rendered.';
+		}
+
+		// Add all the REST API request caches to the WPDAta
+		$window['WPData']['requests'] = $request_cache;
+
+		$render['style'] = get_stylesheet_directory_uri() . '/build/index.css';
+		$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+		$render['data'] = $window['WPData'];
+		ob_start();
+		include( locate_template( 'index.php' ) );
+		$output = ob_get_clean();
 	} catch ( V8JsScriptException $e ) {
+		// Detect if no route can be handled by the React theme.
+		if ( strpos( $e->getMessage(), 'no-routes' ) ) {
+			return null;
+		}
+		exit;
 		//if ( WP_DEBUG ) {
 			$offsets = [
 				'header' => $header_offset,
@@ -237,8 +294,10 @@ END;
 		// }
 
 		// Error, so render an empty container.
-		print( '<div id="root"></div>' );
+		return '';
 	}
+
+	return $output;
 }
 
 /**
@@ -246,7 +305,7 @@ END;
  *
  * @param V8JsScriptException $e Exception to handle.
  */
-function handle_exception( V8JsScriptException $e ) {
+function handle_exception( V8JsScriptException $e ) : void {
 	$file = $e->getJsFileName();
 	$trace = explode( "\n", $e->getJsTrace() );
 
@@ -260,7 +319,12 @@ function handle_exception( V8JsScriptException $e ) {
 			$file = $matches[1];
 			$line = $matches[2];
 			$column = $matches[3];
-			$map = SourceMap::loadFromFile( dirname( __DIR__ ) . '/build/' . $file . '.map' );
+			$map_file = dirname( __DIR__ ) . '/build/' . $file . '.map';
+			if ( ! file_exists( $map_file ) ) {
+				break;
+			}
+			$map = SourceMap::loadFromFile( $map_file );
+
 			$position = $map->getPosition( $line, $column );
 			if ( $position ) {
 				$file = $position->source->fileName;
@@ -271,7 +335,9 @@ function handle_exception( V8JsScriptException $e ) {
 			}
 			break;
 		}
-	} else {
+	}
+
+	if ( ! $line ) {
 		$line = (int) $e->getJsLineNumber();
 		$column = $e->getJsStartColumn();
 		$source_line = $e->getJsSourceLine();

@@ -1,5 +1,6 @@
 {
     "name": "joehoyle/r",
+    "type": "wordpress-plugin",
     "description": "WordPress Themes for React",
     "authors": [
         {
@@ -8,6 +9,7 @@
         }
     ],
     "require": {
-        "axy/sourcemap": "^0.1.5"
+        "axy/sourcemap": "^0.1.5",
+        "composer/installers": "~1.0"
     }
 }
