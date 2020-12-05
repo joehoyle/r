@@ -180,7 +180,11 @@ function render() : void {
 	// Add all the REST API request caches to the WPDAta
 	$render['body'] = '<div id="root"></div>';
 	$render['style'] = get_stylesheet_directory_uri() . '/build/index.css';
-	$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+	if ( has_dev_server() ) {
+		$render['dev-scripts'] = true;
+	} else {
+		$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+	}
 	$render['data'] = get_init_data();
 	ob_start();
 	include( locate_template( 'index.php' ) );
@@ -233,7 +237,11 @@ function server_render() : ?string {
 		$window['WPData']['requests'] = $request_cache;
 
 		$render['style'] = get_stylesheet_directory_uri() . '/build/index.css';
-		$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+		if ( has_dev_server() ) {
+			$render['dev-scripts'] = true;
+		} else {
+			$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+		}
 		$render['data'] = $window['WPData'];
 		ob_start();
 		include( locate_template( 'index.php' ) );
@@ -264,18 +272,26 @@ function server_render() : ?string {
 	return $output;
 }
 
+function has_dev_server() : bool {
+	return true;
+}
+
 /**
  * Get a V8 Snapshot of the entry script.
  *
  * @return string
  */
-function get_v8_snapshot( string $setup, string $entrypoint_path ) : string {
+function get_v8_snapshot( string $setup, string $entrypoint_path ) : ?string {
 	$snapshot_version = filemtime( $entrypoint_path );
 	$snapshot_path = sys_get_temp_dir() . '/' . sha1( $entrypoint_path . $snapshot_version ) . '.r-v8-snapshot';
 	if ( true || ! file_exists( $snapshot_path ) ) {
 		$source = file_get_contents( $entrypoint_path );
 		/** @var string|false */
 		$snapshot = V8Js::createSnapshot( $setup . $source );
+		if ( ! $snapshot ) {
+			trigger_error( 'Unable to create snapshot... falling back.' );
+			return null;
+		}
 		file_put_contents( $snapshot_path, $snapshot );
 	} else {
 		$snapshot = file_get_contents( $snapshot_path );
@@ -290,10 +306,15 @@ function get_v8_snapshot( string $setup, string $entrypoint_path ) : string {
  */
 function get_v8( array $window_object, string $entrypoint_path, bool $use_snapshot = false ) : V8Js {
 	$setup = get_bootstrap_script( $window_object );
+	$v8 = null;
 	if ( $use_snapshot ) {
 		$snapshot = get_v8_snapshot( $setup, $entrypoint_path );
-		$v8 = new V8Js( 'PHP', [], [], true, $snapshot );
-	} else {
+		if ( $snapshot ) {
+			$v8 = new V8Js( 'PHP', [], [], true, $snapshot );
+		}
+	}
+
+	if ( ! $v8 ) {
 		$v8 = new V8Js();
 		$v8->executeString( $setup, 'bootstrap.js' );
 		$v8->executeString( file_get_contents( $entrypoint_path ), 'index.js' );
@@ -313,7 +334,7 @@ function get_bootstrap_script( array $window_object ) : string {
 // Set up browser-compatible APIs.
 var window = this;
 function serverLog( type, ...args ) {
-	if ( typeof PHP !== 'undefined' ) {
+	if ( typeof PHP !== 'undefined' && typeof PHP.log !== 'undefined' ) {
 		PHP.log( type, args );
 	}
 }

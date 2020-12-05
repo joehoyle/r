@@ -18,7 +18,17 @@
 				var isSSR = false;
 			</script>
 		<?php endif ?>
-		<?php if ( $render['script'] ) : ?>
+		<?php if ( isset( $render['dev-scripts'] ) ) : ?>
+			<script type="module" src='http://localhost:3000/vite/client'></script>
+			<script type="module">
+				import RefreshRuntime from "http://localhost:3000/@react-refresh"
+				RefreshRuntime.injectIntoGlobalHook(window)
+				window.$RefreshReg$ = () => {}
+				window.$RefreshSig$ = () => (type) => type
+				window.__vite_plugin_react_preamble_installed__ = true
+			</script>
+			<script type="module" sync src="http://localhost:3000/node_modules/wordpress-r/theme/index.tsx"></script>
+		<?php elseif ( $render['script'] ) : ?>
 			<script async src="<?php echo $render['script'] ?>"></script>
 		<?php endif ?>
 	</body>

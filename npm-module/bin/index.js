@@ -1,6 +1,8 @@
 #! /usr/bin/env node
 let esbuild = require('esbuild');
 let chokidar = require('chokidar');
+const { createServer } = require('vite')
+const viteReact = require('vite-plugin-react')
 
 const watch = process.argv.indexOf( '--watch' ) > -1;
 
@@ -30,8 +32,25 @@ esbuild.build({
 			console.log( 'rebuild' );
 		} )
 	}
-})
+});
 
+if ( watch ) {
+	createServer({
+		configureServer: [ viteReact.configureServer ],
+		transforms: viteReact.transforms,
+		cors: true,
+		jsx: 'react',
+		optimizeDeps: {
+			exclude: [ 'wordpress-r' ],
+			include: [ 'react-helmet', 'react-dom/server', 'prop-types', 'react-router-dom', 'react-router' ],
+		},
+		mode: 'development',
+		hmr: {
+			hostname: 'localhost'
+		}
+
+	} ).listen(3000)
+}
 
 return;
 
