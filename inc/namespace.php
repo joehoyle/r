@@ -273,7 +273,7 @@ function server_render() : ?string {
 }
 
 function has_dev_server() : bool {
-	return true;
+	return false;
 }
 
 /**
@@ -284,7 +284,7 @@ function has_dev_server() : bool {
 function get_v8_snapshot( string $setup, string $entrypoint_path ) : ?string {
 	$snapshot_version = filemtime( $entrypoint_path );
 	$snapshot_path = sys_get_temp_dir() . '/' . sha1( $entrypoint_path . $snapshot_version ) . '.r-v8-snapshot';
-	if ( true || ! file_exists( $snapshot_path ) ) {
+	if ( ! file_exists( $snapshot_path ) ) {
 		$source = file_get_contents( $entrypoint_path );
 		/** @var string|false */
 		$snapshot = V8Js::createSnapshot( $setup . $source );

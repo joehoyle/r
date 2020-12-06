@@ -10,9 +10,26 @@ R handles server rendering, front-end routing, integration with WP-Rewrites, bui
 
 Just create `Single.tsx` like you would `single.php` and enjoy never having configure a complex setup of `wp_enqueue_script`, pre-loading data and JavaScript building again.
 
+## Todo
+
+R is still very early and experimental. Todo list:
+
+- [x] HMR / Live Reload JS
+- [x] Live reload on CSS
+- [ ] WordPress Menus
+- [ ] `isSingle` etc functions
+- [ ] Dynamic Template Loading
+- [ ] Post Previews
+- [ ] Public Query Vars for post types
+- [ ] Query Monitor support
+- [ ] Page Titles API
+- [ ] TypeScript types for all objects
+- [ ] `useData` hook with SSR support
+- [ ] Configure SSR-only, front-end only or isomorphic renderiing
+
 ## Get Started
 
-Prerequisites: The [V8JS PHP module](https://github.com/phpv8/v8js/) to provide server-side rendering.
+Prerequisites: The [V8JS PHP module](https://github.com/phpv8/v8js/) to provide server-side rendering (with libv8 7.5+).
 
 Install the R WordPress plugin.
 
