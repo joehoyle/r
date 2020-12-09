@@ -8,7 +8,8 @@ use V8JsScriptException;
 use axy\sourcemap\SourceMap;
 use WP_REST_Request;
 
-const SSR = true;
+const SSR = false;
+const CSR = true;
 
 function bootstrap() : void {
 	register_theme_directory( dirname( __DIR__ ) . '/theme-directory/' );
@@ -50,9 +51,11 @@ function get_rewrites() {
 	if ( get_option( 'show_on_front' ) === 'page' ) {
 		// Push homepage rule on to start of array
 		$rest_rules = [
-			'^/?$' => [
-				'uri' => get_rest_url( null, '/wp/v2/pages/' . get_option( 'page_on_front' ) ),
-				'params' => [],
+			'^?$' => [
+				'uri' => get_rest_url( null, '/wp/v2/pages' ),
+				'params' => [
+					'include' => get_option( 'page_on_front' ),
+				],
 			],
 			'wp-admin/' => null,
 		] + $rest_rules;
@@ -197,7 +200,7 @@ function server_render() : ?string {
 
 	// Create stubs.
 	$window = get_window_object();
-	$v8 = get_v8( $window, $entrypoint_path, true );
+	$v8 = get_v8( $window, $entrypoint_path, false );
 	$start = microtime( true );
 	$request_cache = [];
 
@@ -221,6 +224,9 @@ function server_render() : ?string {
 	};
 
 	$v8->log = function ( string $type, array $message ) {
+		$message = array_map( function ( $message ) {
+			return var_export( $message, true );
+		}, $message );
 		error_log( "SSR $type: " . implode( ", ", $message ) );
 	};
 
@@ -237,12 +243,15 @@ function server_render() : ?string {
 		$window['WPData']['requests'] = $request_cache;
 
 		$render['style'] = get_stylesheet_directory_uri() . '/build/index.css';
-		if ( has_dev_server() ) {
-			$render['dev-scripts'] = true;
-		} else {
-			$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+
+		if ( CSR ) {
+			if ( has_dev_server() ) {
+				$render['dev-scripts'] = true;
+			} else {
+				$render['script'] = get_stylesheet_directory_uri() . '/build/index.js';
+			}
+			$render['data'] = $window['WPData'];
 		}
-		$render['data'] = $window['WPData'];
 		ob_start();
 		include( locate_template( 'index.php' ) );
 		$output = ob_get_clean();
@@ -316,9 +325,13 @@ function get_v8( array $window_object, string $entrypoint_path, bool $use_snapsh
 
 	if ( ! $v8 ) {
 		$v8 = new V8Js();
+		$v8->setModuleLoader( function ( $module ) {
+
+		});
 		$v8->executeString( $setup, 'bootstrap.js' );
 		$v8->executeString( file_get_contents( $entrypoint_path ), 'index.js' );
 	}
+
 
 	return $v8;
 }
@@ -334,15 +347,18 @@ function get_bootstrap_script( array $window_object ) : string {
 // Set up browser-compatible APIs.
 var window = this;
 function serverLog( type, ...args ) {
+	// args = args.map( arg => {
+	// 	return JSON.stringify( arg, null, 4 );
+	// } );
 	if ( typeof PHP !== 'undefined' && typeof PHP.log !== 'undefined' ) {
-		PHP.log( type, args );
+		PHP.log( type, [ args ] );
 	}
 }
 Object.assign( window, $window_json );
 var console = {
 	warn: ( ...args ) => serverLog( 'warn', ...args ),
-	error: ( ...args ) => serverLog( 'warn', ...args ),
-	log: ( ...args ) => serverLog( 'warn', ...args ),
+	error: ( ...args ) => serverLog( 'error', ...args ),
+	log: ( ...args ) => serverLog( 'log', ...args ),
 };
 window.setTimeout = window.clearTimeout = () => {};
 

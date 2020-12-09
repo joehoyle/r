@@ -1,6 +1,7 @@
 #! /usr/bin/env node
 let esbuild = require('esbuild');
 let chokidar = require('chokidar');
+const fs = require( 'fs' );
 const { createServer } = require('vite')
 const viteReact = require('vite-plugin-react')
 
@@ -8,6 +9,17 @@ const watch = process.argv.indexOf( '--watch' ) > -1;
 const hmr = process.argv.indexOf( '--hmr' ) > -1;
 
 const entrypoint = `${__dirname}/../theme/index.tsx`;
+
+// Get all template files and make sure they are in the build. Because they are
+// dynamically loaded, the esbuild entrypoint will not find them.
+const knownNonTemplates = [ 'Header', 'Footer', 'Layout' ];
+const files = fs.readdirSync( './' ).filter( file => file.endsWith( '.tsx' ) ).map( file => file.replace( '.tsx', '' ) ).filter( f => knownNonTemplates.indexOf( f ) === -1 )
+const file = `
+${ files.map( file => `import Template${ file } from "../../../${ file }";` ).join( '\n' ) }
+export { ${ files.map( t => `Template${ t }` ).join( ", " ) } };
+`
+
+fs.writeFileSync( __dirname + '/../theme/templates.ts', file );
 
 esbuild.build({
 	entryPoints: [ entrypoint ],
@@ -24,7 +36,7 @@ esbuild.build({
 		chokidar.watch( './', {
 			ignored: [
 				/build/,
-				/node_modules/
+				///node_modules/
 			],
 			ignoreInitial: true
 		} ).on( 'all', async (what, path ) => {

@@ -12,10 +12,12 @@
 	</head>
 	<body <?php echo $render['helmet']->bodyAttributes ?>>
 		<div id="root" data-rendered=""><?php echo $render['body'] ?></div>
-		<?php if ( $render['data'] ) : ?>
+		<?php if ( isset( $render['data'] ) ) : ?>
 			<script>
 				var WPData = <?php echo wp_json_encode( $render['data'] ) ?>;
 				var isSSR = false;
+				var global = {};
+				var require = () => ({})
 			</script>
 		<?php endif ?>
 		<?php if ( isset( $render['dev-scripts'] ) ) : ?>
@@ -28,7 +30,7 @@
 				window.__vite_plugin_react_preamble_installed__ = true
 			</script>
 			<script type="module" sync src="http://localhost:3000/node_modules/wordpress-r/theme/index.tsx"></script>
-		<?php elseif ( $render['script'] ) : ?>
+		<?php elseif ( isset( $render['script'] ) ) : ?>
 			<script async src="<?php echo $render['script'] ?>"></script>
 		<?php endif ?>
 	</body>

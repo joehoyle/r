@@ -1,13 +1,9 @@
 import React, { FunctionComponent } from 'react';
 import { useEffect, useState, useLayoutEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import Single from '../../../Single';
-import Layout from '../../../Layout';
-import Archive from '../../../Archive';
-import NotFound from '../../../404';
-import { getPropsForQuery, getRequestForQuery, getSSR, get, getTemplatesForQuery, getCached } from './lib';
+import { getPropsForTemplate, getRequestForQuery, getSSR, get, getTemplatesForQuery, getCached } from './lib';
 import render from './render';
-
+import * as Templates from './templates';
 import {
 	BrowserRouter,
 	Switch,
@@ -16,6 +12,7 @@ import {
 	useHistory,
 	StaticRouter
 } from "react-router-dom";
+import Layout from '../../../Layout';
 
 function Page() {
 	const rewrite = WPData.rewrite;
@@ -42,7 +39,6 @@ function Page() {
 					}
 				} } />
 			})}
-			<Route component={NotFound} />
 		</Switch>
 	</Router>;
 }
@@ -55,12 +51,14 @@ function Router({ children }) {
 		</BrowserRouter>
 }
 
+interface RESTAPIParams {
+	[param: string]: number | boolean | string,
+};
+
 interface MatchedRouteProps {
 	query: {
 		uri: string,
-		params: {
-			[param: string]: number | boolean | string,
-		},
+		params: RESTAPIParams,
 	},
 	regex: string,
 };
@@ -72,12 +70,6 @@ export interface TemplateProps {
 		message: string,
 	},
 	[s: string]: any,
-}
-
-const TemplateMap: { [s: string]: FunctionComponent<any> } = {
-	Archive: Archive,
-	Single: Single,
-	NotFound: NotFound,
 }
 
 function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: string]: string }>) {
@@ -107,57 +99,53 @@ function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: strin
 	const query = { ...props.query, match: props.match.params, regex: props.regex };
 	const request = getRequestForQuery( query );
 
-	return <Data
-		{...request}
-		render={ ( { loading, error, data } ) => {
-			if ( loading ) {
-				return <h1>Loading...</h1>;
-			}
-			if ( error ) {
-				return <span>{ JSON.stringify( error ) }</span>
-			}
-			const templateDataProps = getPropsForQuery( query, data );
-			const templates = getTemplatesForQuery( query, data );
-			let Comp: FunctionComponent = () => <h1>No Template</h1>
+	const [ loading, data, error ] = useData( request.uri, request.params );
 
-			if (templates && templates[0]) {
-				const template = templates[0]
-				if (!TemplateMap[template]) {
-					throw new Error(`Template ${template} not found: `)
-				}
-				Comp = TemplateMap[template];
-			}
+	if ( loading ) {
+		return <span>loading...</span>
+	}
+	if ( error ) {
+		return <span>{ JSON.stringify( error ) }</span>
+	}
 
-			return <Layout>
-				<Comp loading={loading} error={error} {...templateDataProps}></Comp>
-			</Layout>
-		} }
-	/>
+	let templateDataProps = {}
+	const templates = getTemplatesForQuery( query, data );
+	console.log( templates )
+	let Comp: FunctionComponent = () => <h1>No Template</h1>
+
+
+	for (let i = 0; i < templates.length; i++) {
+		const templateName = `Template${ templates[i] }`;
+		if ( typeof Templates[ templateName ] === 'undefined' ) {
+			continue;
+		}
+
+		templateDataProps = getPropsForTemplate( templates[i], query, data );
+
+		Comp = Templates[ templateName ];
+		break;
+	}
+
+	return <Layout>
+		<Comp loading={loading} error={error} {...templateDataProps}></Comp>
+	</Layout>
 }
 
-function Data( props: { uri: string, params: {}, render: ( props: { loading: boolean, data: any, error: null } ) => JSX.Element } ) : JSX.Element {
-	let componentProps = { loading: true, error: undefined, data: undefined };
-
+function useData( uri: string, params: RESTAPIParams ) {
 	if ( isSSR ) {
-		componentProps.data = getSSR( props.uri, props.params );
-		componentProps.loading = false;
-	} else if ( getCached( props.uri, props.params ) ) {
-		componentProps.data = getCached( props.uri, props.params );
-		componentProps.loading = false;
+		return [ false, getSSR( uri, params ), null ];
 	} else {
-		const [p, setData] = useState<typeof componentProps>(componentProps);
-		componentProps = p;
+		const [p, setData] = useState({loading: true, data: undefined, error: null });
 		useLayoutEffect(() => {
 			async function getData() {
-				const response = await get( props.uri, props.params );
-				setData({ loading: false, data: response, error: undefined });
+				const response = await get( uri, params );
+				setData({ loading: false, data: response, error: null });
 			}
 			getData();
 		}, [])
+		return [ p.loading, p.data, p.error ];
 	}
-	return props.render( componentProps );
 }
-
 
 if ( isSSR ) {
 	// In SSR, provider a render function rather than self-executing.
