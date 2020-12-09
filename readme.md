@@ -15,7 +15,7 @@ Just create `Single.tsx` like you would `single.php` and enjoy never having conf
 R is still very early and experimental. Todo list:
 
 - [x] HMR / Live Reload JS
-- [x] Live reload on CSS
+- [ ] Live reload on CSS
 - [ ] WordPress Menus
 - [x] `isSingle` etc functions
    - [ ] Update to use context
@@ -27,6 +27,8 @@ R is still very early and experimental. Todo list:
 - [ ] TypeScript types for all objects
 - [x] `useData` hook with SSR support
 - [ ] Configure SSR-only, front-end only or isomorphic renderiing
+- [ ] Current user / `isLoggedIn()`
+- [ ] Widgets / Sidebars
 
 ## Get Started
 
@@ -36,7 +38,7 @@ Install the R WordPress plugin.
 
 `composer require joehoyle/r`
 
-Create a new theme in `/wp-content/themes` with a `package.json` depending on `joehoyle/r`.
+Create a new theme in `/wp-content/themes` with a `package.json` depending on `joehoyle/r`, a `style.css` and a `Layout.tsx`.
 
 ```
 // style.css
@@ -52,7 +54,7 @@ Create a new theme in `/wp-content/themes` with a `package.json` depending on `j
 	}
 }
 
-// Header.tsx
+// Layout.tsx
 export default function Layout( { children }) {
 	return <div id="site-wrapper">
 		<h1>My Site</h1>
@@ -161,7 +163,7 @@ export function Comments( { post: Post } ) {
 
 ## Server-side Rendering Conditionals
 
-To increase speed of load times, you may want to only rendering some things client-side. For example, you may chose to not render non-essential widgets or recommender blocks on the server, so the initial page load is fast. To do so, just use the `isSSR` export from R to conditionally render the component:
+To increase speed of load times, you may want to only rendering some things server-side. For example, you may chose to not render non-essential widgets or recommender blocks on the server, so the initial page load is fast. To do so, just use the `isSSR` export from R to conditionally render the component. R's automatic browser hydration will mean it's grracefully loaded on the client-side once the page has loaded:
 
 ```js
 import { isSSR } from 'wordpress-r';
