@@ -1,7 +1,7 @@
 import React, { FunctionComponent } from 'react';
-import { useEffect, useState, useLayoutEffect } from 'react';
+import { useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { getPropsForTemplate, getRequestForQuery, getSSR, get, getTemplatesForQuery, getCached } from './lib';
+import { getPropsForTemplate, getRequestForQuery, useData, getTemplatesForQuery, getCached, QueryContext, Query, useQuery } from './lib';
 import render from './render';
 import * as Templates from './templates';
 import {
@@ -51,10 +51,6 @@ function Router({ children }) {
 		</BrowserRouter>
 }
 
-interface RESTAPIParams {
-	[param: string]: number | boolean | string,
-};
-
 interface MatchedRouteProps {
 	query: {
 		uri: string,
@@ -73,6 +69,53 @@ export interface TemplateProps {
 }
 
 function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: string]: string }>) {
+
+	useOverrideExernalNavigation();
+	// Setup Query
+	const query: Query = { ...props.query, match: props.match.params, regex: props.regex, loading: true };
+	query.request = getRequestForQuery( query );
+	const [ loading, data, error ] = useData( query.request.uri, query.request.params );
+	query.loading = loading;
+	query.data = data;
+	query.error = error;
+
+	return (
+		<QueryContext.Provider value={ query }>
+			<Layout>
+				<TemplateLoader></TemplateLoader>
+			</Layout>
+		</QueryContext.Provider>
+	)
+}
+
+function TemplateLoader() {
+	let templateDataProps = {}
+	const templates = getTemplatesForQuery();
+	const query = useQuery();
+
+	if ( query.loading ) {
+		return null;
+	}
+
+	let Comp: FunctionComponent<{}> = () => <h1>No Template</h1>
+	let matchedTemplate = null;
+	for (let i = 0; i < templates.length; i++) {
+		const templateName = `Template${ templates[i] }`;
+		if ( typeof Templates[ templateName ] === 'undefined' ) {
+			continue;
+		}
+
+		matchedTemplate = templates[i]
+		Comp = Templates[ templateName ];
+		break;
+	}
+
+	templateDataProps = getPropsForTemplate( matchedTemplate, query );
+
+	return <Comp {...templateDataProps}></Comp>
+}
+
+function useOverrideExernalNavigation() {
 	let history = useHistory();
 	useEffect(() => {
 		// Make all clicks in the route use react-router
@@ -95,56 +138,6 @@ function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: strin
 		document.addEventListener('click', MakeLocal)
 		return () => document.removeEventListener('click', MakeLocal)
 	}, []);
-
-	const query = { ...props.query, match: props.match.params, regex: props.regex };
-	const request = getRequestForQuery( query );
-
-	const [ loading, data, error ] = useData( request.uri, request.params );
-
-	if ( loading ) {
-		return <span>loading...</span>
-	}
-	if ( error ) {
-		return <span>{ JSON.stringify( error ) }</span>
-	}
-
-	let templateDataProps = {}
-	const templates = getTemplatesForQuery( query, data );
-	console.log( templates )
-	let Comp: FunctionComponent = () => <h1>No Template</h1>
-
-
-	for (let i = 0; i < templates.length; i++) {
-		const templateName = `Template${ templates[i] }`;
-		if ( typeof Templates[ templateName ] === 'undefined' ) {
-			continue;
-		}
-
-		templateDataProps = getPropsForTemplate( templates[i], query, data );
-
-		Comp = Templates[ templateName ];
-		break;
-	}
-
-	return <Layout>
-		<Comp loading={loading} error={error} {...templateDataProps}></Comp>
-	</Layout>
-}
-
-function useData( uri: string, params: RESTAPIParams ) {
-	if ( isSSR ) {
-		return [ false, getSSR( uri, params ), null ];
-	} else {
-		const [p, setData] = useState({loading: true, data: undefined, error: null });
-		useLayoutEffect(() => {
-			async function getData() {
-				const response = await get( uri, params );
-				setData({ loading: false, data: response, error: null });
-			}
-			getData();
-		}, [])
-		return [ p.loading, p.data, p.error ];
-	}
 }
 
 if ( isSSR ) {

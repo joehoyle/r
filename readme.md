@@ -16,9 +16,9 @@ R is still very early and experimental. Todo list:
 
 - [x] HMR / Live Reload JS
 - [ ] Live reload on CSS
-- [ ] WordPress Menus
+- [x] WordPress Menus
 - [x] `isSingle` etc functions
-   - [ ] Update to use context
+   - [x] Update to use context
 - [x] Dynamic Template Loading
 - [ ] Post Previews
 - [ ] Public Query Vars for post types

@@ -18,12 +18,20 @@ function bootstrap() : void {
 	} else {
 		add_action( 'template_redirect', __NAMESPACE__ . '\\render' );
 	}
+
+	add_action( 'rest_api_init', __NAMESPACE__ . '\\rest_api_init' );
+}
+
+function rest_api_init() : void {
+	$endpoint = new REST_API\Menus_Endpoint();
+	$endpoint->register_routes();
 }
 
 function get_init_data() : array {
 	return [
 		'rewrite' => get_rewrites(),
 		'url'     => home_url( '/' ),
+		'rest_url' => get_rest_url(),
 		'requests' => (object) [],
 	];
 }
