@@ -10,6 +10,7 @@ use WP_REST_Request;
 
 const SSR = false;
 const CSR = true;
+const HMR = true;
 
 function bootstrap() : void {
 	register_theme_directory( dirname( __DIR__ ) . '/theme-directory/' );
@@ -189,7 +190,7 @@ function get_window_object() : array {
 function render() : void {
 	$render = [];
 	// Add all the REST API request caches to the WPDAta
-	$render['body'] = '<div id="root"></div>';
+	$render['body'] = '';
 	$render['style'] = get_stylesheet_directory_uri() . '/build/index.css';
 	if ( has_dev_server() ) {
 		$render['dev-scripts'] = true;
@@ -292,7 +293,7 @@ function server_render() : ?string {
 }
 
 function has_dev_server() : bool {
-	return false;
+	return HMR;
 }
 
 /**

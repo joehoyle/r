@@ -11,7 +11,7 @@
 		<?php endif ?>
 	</head>
 	<body <?php echo $render['helmet']->bodyAttributes ?>>
-		<div id="root" data-rendered=""><?php echo $render['body'] ?></div>
+		<div id="root" <?php echo $render['body'] ? 'data-rendered=""' : ''?>><?php echo $render['body'] ?></div>
 		<?php if ( isset( $render['data'] ) ) : ?>
 			<script>
 				var WPData = <?php echo wp_json_encode( $render['data'] ) ?>;

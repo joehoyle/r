@@ -58,13 +58,25 @@ if ( hmr ) {
 			exclude: [ 'wordpress-r', 'postcss-cli', 'postcss' ],
 			include: [ 'react-helmet', 'react-dom/server', 'prop-types', 'react-router-dom', 'react-router' ],
 		},
+		resolvers: [
+			{
+				alias: ( file ) => {
+					if ( file === 'wordpress-r' ) {
+						return '/node_modules/wordpress-r/index.js'
+					}
+					return file;
+				}
+			}
+		],
 		mode: 'development',
 		hmr: {
-			hostname: 'localhost'
+			hostname: 'localhost',
+			protocol: 'ws',
 		},
 		secure: true
 
 	} ).listen(3000)
+	console.log( `Listening on post 3000` );
 }
 
 return;

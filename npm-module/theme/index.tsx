@@ -71,6 +71,10 @@ export interface TemplateProps {
 function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: string]: string }>) {
 
 	useOverrideExernalNavigation();
+
+	useEffect(() => {
+		window.scrollTo(0, 0);
+	}, [ props.match.url ])
 	// Setup Query
 	const query: Query = { ...props.query, match: props.match.params, regex: props.regex, loading: true };
 	query.request = getRequestForQuery( query );

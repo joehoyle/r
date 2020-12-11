@@ -1,6 +1,6 @@
 import React, { useContext, useState, useLayoutEffect, ReactElement, FunctionComponent } from 'react';
 
-export const QueryContext = React.createContext( undefined );
+export const QueryContext = React.createContext( { loading: true } );
 
 export interface Query {
 	uri: string,
@@ -26,8 +26,9 @@ interface RESTAPIParams {
 	[param: string]: number | boolean | string,
 };
 
+// Todo: needs to be async, map things like category_slug
 export function getRequestForQuery( query: Query ) {
-	let params = {  };
+	let params = {};
 	for ( const param in query.params ) {
 		const value = query.params[ param ];
 		if ( typeof value !== 'string' || value.indexOf( '$' ) !== 0 ) {
@@ -226,6 +227,15 @@ export function getPropsForTemplate( template: string, query: Query ) {
 export async function get(uri: string, params: { [a: string]: string | number | boolean } = {}) : Promise<any> {
 	if ( uri.startsWith( '/' ) ) {
 		uri = WPData.rest_url + uri.substr( 1 );
+	}
+	// parse url params
+	if ( uri.indexOf( '?' ) > -1 ) {
+		let querystring = '';
+		[ uri, querystring ] = uri.split( '?' );
+		const query = querystring.split( '&' ).map( p => p.split( '=' ) );
+		query.forEach( q => {
+			params[ decodeURIComponent( q[0] ) ] = decodeURIComponent( q[1] );
+		} );
 	}
 	if ( isSSR ) {
 		const body = PHP.rest_request( uri, params );
