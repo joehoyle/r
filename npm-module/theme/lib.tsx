@@ -1,4 +1,4 @@
-import React, { useContext, useState, useLayoutEffect } from 'react';
+import React, { useContext, useState, useLayoutEffect, ReactElement, FunctionComponent } from 'react';
 
 export const QueryContext = React.createContext( undefined );
 
@@ -27,20 +27,22 @@ interface RESTAPIParams {
 };
 
 export function getRequestForQuery( query: Query ) {
+	let params = {  };
 	for ( const param in query.params ) {
 		const value = query.params[ param ];
 		if ( typeof value !== 'string' || value.indexOf( '$' ) !== 0 ) {
+			params[ param ] = value;
 			continue;
 		}
 		const paramNumber = Number( value.replace( '$', '' ) );
 
 		// Param replacements are 1-based, but match positions are zero-based.
-		query.params[ param ] = query.match[ paramNumber - 1 ];
+		params[ param ] = query.match[ paramNumber - 1 ];
 	}
 
 	return {
 		uri: query.uri,
-		params: query.params
+		params,
 	}
 }
 
@@ -237,6 +239,8 @@ export async function get(uri: string, params: { [a: string]: string | number | 
 
 		const r = await fetch( url )
 		const json = await r.json();
+
+		WPData.requests[ url ] = json;
 		return json;
 	}
 }
@@ -252,6 +256,9 @@ export function getCached(uri: string, params: { [a: string]: string | number | 
 }
 
 export function useData<T>( uri: string, params: RESTAPIParams = {} ) : [ boolean, T|null, any? ] {
+	if ( uri.startsWith( '/' ) ) {
+		uri = WPData.rest_url + uri.substr( 1 );
+	}
 	if ( isSSR ) {
 		return [ false, getSSR( uri, params ) as T, null ];
 	} else {
@@ -283,22 +290,50 @@ function encodeUri(obj: { [a: string]: string | number | boolean }) {
 	return str;
 }
 
-export function Menu( { location } : { location: string } ) {
-	const [ loading, items, error ] = useData<MenuItem[]>( `/r/v1/menu-locations/${ location }` );
+
+
+export const Image: FunctionComponent<{id: number, size: string, className?: string}> = ({ id, className, size }) => {
+	const [ loading, image, error ] = useData( `/wp/v2/media/${ id }` );
 	if ( loading ) {
-		return null;
+		return <></>;
 	}
 	if ( error ) {
-		return console.error( error );
+		console.error( error );
+		return <></>;
 	}
 
+	return <img
+		src={ image.media_details?.sizes?.large?.source_url }
+		className={ className }
+	/>
+}
+
+type MenuProps = {
+	location: string,
+	renderItem?: ( item: MenuItem ) => ReactElement,
+	className?: string,
+}
+
+
+export const Menu: FunctionComponent<MenuProps> = ({ location, renderItem, className }) => {
+	const [ loading, items, error ] = useData<MenuItem[]>( `/r/v1/menu-locations/${ location }` );
+	if ( loading ) {
+		return <></>;
+	}
+	if ( error ) {
+		console.error( error );
+		return <></>;
+	}
+
+	const defaultRenderItem = ( item: MenuItem ) => (
+		<li key={ item.ID }>
+			<a href={ item.url }>{ item.title }</a>
+		</li>
+	);
+
 	return (
-		<ul>
-			{ items.map( item => (
-				<li key={ item.id }>
-					<a href={ item.url }>{ item.title }</a>
-				</li>
-			) ) }
+		<ul className={ className }>
+			{ items.map( renderItem || defaultRenderItem ) }
 		</ul>
 	)
 }

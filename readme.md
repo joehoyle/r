@@ -17,6 +17,7 @@ R is still very early and experimental. Todo list:
 - [x] HMR / Live Reload JS
 - [ ] Live reload on CSS
 - [x] WordPress Menus
+   - [ ] Menu registration
 - [x] `isSingle` etc functions
    - [x] Update to use context
 - [x] Dynamic Template Loading
@@ -26,9 +27,12 @@ R is still very early and experimental. Todo list:
 - [ ] Document Title API
 - [ ] TypeScript types for all objects
 - [x] `useData` hook with SSR support
-- [ ] Configure SSR-only, front-end only or isomorphic renderiing
+- [ ] Configure SSR-only, front-end only or isomorphic rendering
 - [ ] Current user / `isLoggedIn()`
 - [ ] Widgets / Sidebars
+- [ ] Theme supports
+- [ ] Register image sizes
+- [ ] Reading settings
 
 ## Get Started
 

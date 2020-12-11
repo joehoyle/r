@@ -29,6 +29,7 @@ esbuild.build({
 	define: { 'process.env.NODE_ENV': 'true' },
 	incremental: watch,
 	sourcemap: true,
+	target: 'es6',
 } ).then( result => {
 	console.log( 'Build completed.' );
 	if ( watch ) {
@@ -54,13 +55,14 @@ if ( hmr ) {
 		cors: true,
 		jsx: 'react',
 		optimizeDeps: {
-			exclude: [ 'wordpress-r' ],
+			exclude: [ 'wordpress-r', 'postcss-cli', 'postcss' ],
 			include: [ 'react-helmet', 'react-dom/server', 'prop-types', 'react-router-dom', 'react-router' ],
 		},
 		mode: 'development',
 		hmr: {
 			hostname: 'localhost'
-		}
+		},
+		secure: true
 
 	} ).listen(3000)
 }

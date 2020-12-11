@@ -68,7 +68,7 @@ function get_rewrites() {
 			'wp-admin/' => null,
 		] + $rest_rules;
 	}
-	//print_r( $rest_rules );
+
 	return $rest_rules;
 }
 
@@ -215,11 +215,16 @@ function server_render() : ?string {
 	$v8->rest_request = function ( string $path, $params ) use ( &$request_cache ) {
 		$relative_path = '/' . str_replace( get_rest_url(), '', $path );
 		$params = (array) $params;
+
 		$cache_path = $path . '?' . http_build_query( $params );
 		$request = new WP_REST_Request( 'GET', $relative_path );
 		$request->set_query_params( $params );
 		$response = rest_do_request( $request );
 		$data = $response->get_data();
+		if ( isset( $params['_embed'] ) ) {
+			$data = rest_get_server()->response_to_data( $response, $params['_embed'] );
+		}
+
 		$request_cache[ $cache_path ] = $data;
 		return $data;
 	};
@@ -239,10 +244,7 @@ function server_render() : ?string {
 	};
 
 	try {
-		ob_start();
 		$v8->executeString( 'window.render()' );
-		$output = ob_get_clean();
-
 		if ( ! $render ) {
 			return 'No app was rendered.';
 		}
