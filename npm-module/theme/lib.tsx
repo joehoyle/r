@@ -4,9 +4,7 @@ export const QueryContext = React.createContext( { loading: true } );
 
 export interface Query {
 	uri: string,
-	params: {
-		[param: string]: number | boolean | string,
-	},
+	params: QueryParams,
 	request?: {
 		uri: string,
 		params: {
@@ -20,6 +18,10 @@ export interface Query {
 	loading: boolean,
 	data?: any[],
 	error?: any,
+}
+
+interface QueryParams {
+	[param: string]: number | boolean | string,
 }
 
 interface RESTAPIParams {
@@ -45,6 +47,37 @@ export function getRequestForQuery( query: Query ) {
 		uri: query.uri,
 		params,
 	}
+}
+
+/**
+ * Transforms a map of query params for query vars that may not
+ * directly be able to be passed to the rest api, and returns
+ * resolved params. E.g. category_slug=abc => category => 123
+ */
+export function useResolvedParams( params: QueryParams ) {
+	const newParams = { ...params };
+	let anyLoading = false;
+	let anyError = null;
+	for ( const param in params ) {
+		let loading, object, error, to;
+		switch ( param ) {
+			case 'category_slug':
+				[ loading, object, error ] = useData( `/wp/v2/categories?slug=${ params[ param ] }` );
+				if ( object ) {
+					newParams.categories = object[0]?.id;
+				} else {
+					anyLoading = true;
+				}
+				break;
+			// case 'author_slug':
+			// 	[ loading, object, error ] = useData( `/wp/v2/users?slug=${ params[ param ] }` );
+			// 	to = 'author';
+			default:
+				newParams[ param ] = params[ param ];
+		}
+	}
+
+	return [ anyLoading, newParams, anyError ]
 }
 
 export function useQuery() : Query {

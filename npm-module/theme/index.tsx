@@ -1,7 +1,7 @@
 import React, { FunctionComponent } from 'react';
 import { useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { getPropsForTemplate, getRequestForQuery, useData, getTemplatesForQuery, getCached, QueryContext, Query, useQuery } from './lib';
+import { getPropsForTemplate, getRequestForQuery, useData, getTemplatesForQuery, getCached, QueryContext, Query, useQuery, useResolvedParams } from './lib';
 import render from './render';
 import * as Templates from './templates';
 import {
@@ -78,10 +78,15 @@ function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: strin
 	// Setup Query
 	const query: Query = { ...props.query, match: props.match.params, regex: props.regex, loading: true };
 	query.request = getRequestForQuery( query );
-	const [ loading, data, error ] = useData( query.request.uri, query.request.params );
-	query.loading = loading;
-	query.data = data;
-	query.error = error;
+	const [ loadingParams, resolvedParams, paramsError ] = useResolvedParams( query.request.params );
+
+	if ( ! loadingParams && ! paramsError ) {
+		query.request.params = resolvedParams;
+		const [ loading, data, error ] = useData( query.request.uri, query.request.params );
+		query.loading = loading;
+		query.data = data;
+		query.error = error;
+	}
 
 	return (
 		<QueryContext.Provider value={ query }>

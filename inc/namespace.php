@@ -10,7 +10,7 @@ use WP_REST_Request;
 
 const SSR = false;
 const CSR = true;
-const HMR = true;
+const HMR = false;
 
 function bootstrap() : void {
 	register_theme_directory( dirname( __DIR__ ) . '/theme-directory/' );
@@ -37,7 +37,11 @@ function get_init_data() : array {
 	];
 }
 
-function on_do_parse_request( bool $should_parse ) : bool {
+function on_do_parse_request( bool $should_parse ) {
+	// Don't run on QM Persist requests
+	if ( isset( $_GET['qm_id'] ) ) {
+		return;
+	}
 	$output = server_render();
 	// Null response means the react-app should not handle this request.
 	if ( $output === null ) {
@@ -199,7 +203,7 @@ function render() : void {
 	}
 	$render['data'] = get_init_data();
 	ob_start();
-	include( locate_template( 'index.php' ) );
+	include( locate_template( 'render.php' ) );
 }
 
 function server_render() : ?string {
