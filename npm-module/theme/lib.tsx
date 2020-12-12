@@ -55,7 +55,7 @@ export function getRequestForQuery( query: Query ) {
  * resolved params. E.g. category_slug=abc => category => 123
  */
 export function useResolvedParams( params: QueryParams ) {
-	const newParams = { ...params };
+	const newParams: QueryParams = {};
 	let anyLoading = false;
 	let anyError = null;
 	for ( const param in params ) {
@@ -257,11 +257,12 @@ export function getPropsForTemplate( template: string, query: Query ) {
 }
 
 
-export async function get(uri: string, params: { [a: string]: string | number | boolean } = {}) : Promise<any> {
+export async function get(uri: string, params?: { [a: string]: string | number | boolean } = {}) : Promise<any> {
 	if ( uri.startsWith( '/' ) ) {
 		uri = WPData.rest_url + uri.substr( 1 );
 	}
 	// parse url params
+	params = { ...params }
 	if ( uri.indexOf( '?' ) > -1 ) {
 		let querystring = '';
 		[ uri, querystring ] = uri.split( '?' );
@@ -298,21 +299,31 @@ export function getCached(uri: string, params: { [a: string]: string | number | 
 	return null;
 }
 
-export function useData<T>( uri: string, params: RESTAPIParams = {} ) : [ boolean, T|null, any? ] {
-	if ( uri.startsWith( '/' ) ) {
+export function useData<T>( uri?: string, params: RESTAPIParams = {} ) : [ boolean, T|null, any? ] {
+	if ( uri && uri.startsWith( '/' ) ) {
 		uri = WPData.rest_url + uri.substr( 1 );
 	}
 	if ( isSSR ) {
+		if ( ! uri ) {
+			return [ true, null, null ];
+		}
 		return [ false, getSSR( uri, params ) as T, null ];
 	} else {
-		const [p, setData] = useState({loading: true, data: null, error: null });
+		let [p, setData] = useState({loading: true, data: null, error: null, uri, params });
+		// If params don't match the state, immediately invalidate, rather than async useLayoutEffect.
+		if ( p.uri !== uri || JSON.stringify( p.params ) !== JSON.stringify( params ) ) {
+			p = {loading: true, data: null, error: null, uri, params };
+		}
 		useLayoutEffect(() => {
 			async function getData() {
 				const response = await get( uri, params );
-				setData({ loading: false, data: response, error: null });
+				setData({ loading: false, data: response, error: null, uri, params });
 			}
-			getData();
-		}, [])
+			if ( uri ) {
+				getData();
+			}
+			setData({ loading: true, data: null, error: null, uri, params } );
+		}, [ uri, JSON.stringify( params ) ] )
 		return [ p.loading, p.data, p.error ];
 	}
 }

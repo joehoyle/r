@@ -1,5 +1,5 @@
 import React, { FunctionComponent } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { getPropsForTemplate, getRequestForQuery, useData, getTemplatesForQuery, getCached, QueryContext, Query, useQuery, useResolvedParams } from './lib';
 import render from './render';
@@ -76,20 +76,27 @@ function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: strin
 		window.scrollTo(0, 0);
 	}, [ props.match.url ])
 	// Setup Query
-	const query: Query = { ...props.query, match: props.match.params, regex: props.regex, loading: true };
-	query.request = getRequestForQuery( query );
-	const [ loadingParams, resolvedParams, paramsError ] = useResolvedParams( query.request.params );
+	const [ query, setQuery ] = useState<Query>( { ...props.query, match: props.match.params, regex: props.regex, loading: true } );
 
-	if ( ! loadingParams && ! paramsError ) {
-		query.request.params = resolvedParams;
-		const [ loading, data, error ] = useData( query.request.uri, query.request.params );
-		query.loading = loading;
-		query.data = data;
-		query.error = error;
+	useEffect( () => {
+		setQuery( { ...props.query, match: props.match.params, regex: props.regex, loading: true } );
+	}, [ props.match.url ] );
+
+	const request = getRequestForQuery( query );
+	const [ loadingParams, resolvedParams, paramsError ] = useResolvedParams( request.params );
+	// If we are still loading resolved params, don't pass a url to the
+	// useData hook to no-op it.
+	if ( ! loadingParams && ! paramsError && ! query.request ) {
+		setQuery( { ...query, request: { ...request, params: resolvedParams } } );
+	}
+
+	const [ loading, data, error ] = useData( query.request?.uri, query.request?.params );
+	if ( data && ! query.data ) {
+		setQuery( { ...query, data, loading: false } );
 	}
 
 	return (
-		<QueryContext.Provider value={ query }>
+		<QueryContext.Provider value={ { ...query } }>
 			<Layout>
 				<TemplateLoader></TemplateLoader>
 			</Layout>
