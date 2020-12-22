@@ -54,7 +54,7 @@ export function getRequestForQuery( query: Query ) {
  * directly be able to be passed to the rest api, and returns
  * resolved params. E.g. category_slug=abc => category => 123
  */
-export function useResolvedParams( params: QueryParams ) {
+export function getResolvedParams( params: QueryParams ) {
 	const newParams: QueryParams = {};
 	let anyLoading = false;
 	let anyError = null;
@@ -62,22 +62,16 @@ export function useResolvedParams( params: QueryParams ) {
 		let loading, object, error, to;
 		switch ( param ) {
 			case 'category_slug':
-				[ loading, object, error ] = useData( `/wp/v2/categories?slug=${ params[ param ] }` );
-				if ( object ) {
-					newParams.categories = object[0]?.id;
-				} else {
-					anyLoading = true;
-				}
+				newParams.categories = get( `/wp/v2/categories?slug=${ params[ param ] }` )[0].id;
 				break;
-			// case 'author_slug':
-			// 	[ loading, object, error ] = useData( `/wp/v2/users?slug=${ params[ param ] }` );
-			// 	to = 'author';
+			case 'author_slug':
+				newParams.author = get( `/wp/v2/users?slug=${ params[ param ] }` )[0].id;
 			default:
 				newParams[ param ] = params[ param ];
 		}
 	}
 
-	return [ anyLoading, newParams, anyError ]
+	return newParams;
 }
 
 export function useQuery() : Query {
@@ -170,6 +164,7 @@ export function isPreview( query: Query, response: any ) {
 
 export function getTemplatesForQuery() {
 	const query = useQuery();
+
 	let templateHierarchy: string[] = [ 'NotFound' ];
 	// Special case for homepage.
 	if ( query.regex === '^\/?$' && query.uri.indexOf( 'wp/v2/pages' ) > -1 ) {
@@ -185,7 +180,7 @@ export function getTemplatesForQuery() {
 			templateHierarchy = [ `Category-${ query.params.category_slug }`, 'Category', 'Archive', 'Index' ];
 		} else if ( isTag() ) {
 			// Todo: load tag, Tag-$id
-			templateHierarchy = [ `Tag-${ query.params.category_slug }`, 'Tag', 'Archive', 'Index' ];
+			templateHierarchy = [ `Tag-${ query.params.tag_slug }`, 'Tag', 'Archive', 'Index' ];
 		} else if ( isAuthor() ) {
 			// Todo: load autohor, Author-$nicename, Author-$id
 			templateHierarchy = [ 'Author', 'Archive', 'Index' ];
@@ -236,17 +231,17 @@ export function getPropsForTemplate( template: string, query: Query ) {
 		case 'Category':
 			return {
 				posts: query.data,
-				//category: get( '/wp/v2/categories', { slug: query.params.category_slug } ),
+				category: get( `/wp/v2/categories/${ query.request.params.categories }` ),
 			};
 		case 'Tag':
 			return {
 				posts: query.data,
-				//tag: get( '/wp/v2/tags', { slug: query.params.tag_slug } ),
+				tag: get( '/wp/v2/tags', { slug: query.params.tag_slug } )[0],
 			};
 		case 'Author':
 			return {
 				posts: query.data,
-				//author: get( '/wp/v2/users', { slug: query.params.author_slug } ),
+				author: get( `/wp/v2/users/${ query.request.params.author }` ),
 			};
 		case 'Search':
 			return { posts: query.data, search: query.params.search };
@@ -256,8 +251,9 @@ export function getPropsForTemplate( template: string, query: Query ) {
 	}
 }
 
+const inflightRequests = {};
 
-export async function get(uri: string, params?: { [a: string]: string | number | boolean } = {}) : Promise<any> {
+export function get(uri: string, params?: { [a: string]: string | number | boolean } = {}) : any {
 	if ( uri.startsWith( '/' ) ) {
 		uri = WPData.rest_url + uri.substr( 1 );
 	}
@@ -281,11 +277,24 @@ export async function get(uri: string, params?: { [a: string]: string | number |
 			return WPData.requests[ url ]
 		}
 
-		const r = await fetch( url )
-		const json = await r.json();
+		if ( inflightRequests[ url ] ) {
+			throw inflightRequests[ url ];
+		}
+		const r = fetch( url ).then( r => r.json() ).then( data => {
+			delete inflightRequests[ url ];
+			WPData.requests[ url ] = data;
+			return data;
+		})
 
-		WPData.requests[ url ] = json;
-		return json;
+		inflightRequests[ url ] = r;
+
+		throw r;
+
+		// const r = await fetch( url )
+		// const json = await r.json();
+
+		// WPData.requests[ url ] = json;
+		// return json;
 	}
 }
 
@@ -297,35 +306,6 @@ export function getCached(uri: string, params: { [a: string]: string | number | 
 	}
 
 	return null;
-}
-
-export function useData<T>( uri?: string, params: RESTAPIParams = {} ) : [ boolean, T|null, any? ] {
-	if ( uri && uri.startsWith( '/' ) ) {
-		uri = WPData.rest_url + uri.substr( 1 );
-	}
-	if ( isSSR ) {
-		if ( ! uri ) {
-			return [ true, null, null ];
-		}
-		return [ false, getSSR( uri, params ) as T, null ];
-	} else {
-		let [p, setData] = useState({loading: true, data: null, error: null, uri, params });
-		// If params don't match the state, immediately invalidate, rather than async useLayoutEffect.
-		if ( p.uri !== uri || JSON.stringify( p.params ) !== JSON.stringify( params ) ) {
-			p = {loading: true, data: null, error: null, uri, params };
-		}
-		useLayoutEffect(() => {
-			async function getData() {
-				const response = await get( uri, params );
-				setData({ loading: false, data: response, error: null, uri, params });
-			}
-			if ( uri ) {
-				getData();
-			}
-			setData({ loading: true, data: null, error: null, uri, params } );
-		}, [ uri, JSON.stringify( params ) ] )
-		return [ p.loading, p.data, p.error ];
-	}
 }
 
 export function getSSR(uri: string, params: { [a: string]: string | number | boolean } = {}) : any {
@@ -344,17 +324,8 @@ function encodeUri(obj: { [a: string]: string | number | boolean }) {
 	return str;
 }
 
-
-
 export const Image: FunctionComponent<{id: number, size: string, className?: string}> = ({ id, className, size }) => {
-	const [ loading, image, error ] = useData( `/wp/v2/media/${ id }` );
-	if ( loading ) {
-		return <></>;
-	}
-	if ( error ) {
-		console.error( error );
-		return <></>;
-	}
+	const image = get( `/wp/v2/media/${ id }` );
 
 	return <img
 		src={ image.media_details?.sizes?.large?.source_url }
@@ -370,15 +341,7 @@ type MenuProps = {
 
 
 export const Menu: FunctionComponent<MenuProps> = ({ location, renderItem, className }) => {
-	const [ loading, items, error ] = useData<MenuItem[]>( `/r/v1/menu-locations/${ location }` );
-	if ( loading ) {
-		return <></>;
-	}
-	if ( error ) {
-		console.error( error );
-		return <></>;
-	}
-
+	const items = get<MenuItem[]>( `/r/v1/menu-locations/${ location }` );
 	const defaultRenderItem = ( item: MenuItem ) => (
 		<li key={ item.ID }>
 			<a href={ item.url }>{ item.title }</a>

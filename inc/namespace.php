@@ -8,14 +8,14 @@ use V8JsScriptException;
 use axy\sourcemap\SourceMap;
 use WP_REST_Request;
 
-const SSR = false;
-const CSR = true;
+const SSR = true;
+const CSR = false;
 const HMR = false;
 
 function bootstrap() : void {
 	register_theme_directory( dirname( __DIR__ ) . '/theme-directory/' );
 	if ( SSR ) {
-		add_action( 'do_parse_request', __NAMESPACE__ . '\\on_do_parse_request' );
+		add_filter( 'do_parse_request', __NAMESPACE__ . '\\on_do_parse_request' );
 	} else {
 		add_action( 'template_redirect', __NAMESPACE__ . '\\render' );
 	}
@@ -40,8 +40,17 @@ function get_init_data() : array {
 function on_do_parse_request( bool $should_parse ) {
 	// Don't run on QM Persist requests
 	if ( isset( $_GET['qm_id'] ) ) {
-		return;
+		return $should_parse ;
 	}
+
+	if ( strpos( $_SERVER['REQUEST_URI'], '/' . rest_get_url_prefix() ) === 0 ) {
+		return $should_parse;
+	}
+
+	if ( strpos( $_SERVER['REQUEST_URI'], '/wp-admin/' ) === 0 ) {
+		return $should_parse;
+	}
+
 	$output = server_render();
 	// Null response means the react-app should not handle this request.
 	if ( $output === null ) {
@@ -107,7 +116,7 @@ function get_rest_api_query_for_rewrite_query( string $query ) : ?array {
 		'name' => 'slug',
 		'page_id' => 'id',
 		'page' => '',
-		//'author_name' => ''
+		'author_name' => 'author_slug',
 		'year' => '',
 		'monthnum' => '',
 		'day' => '',
@@ -208,13 +217,13 @@ function render() : void {
 
 function server_render() : ?string {
 	// Load the app source.
+	$start = microtime( true );
 	$entrypoint_url = get_stylesheet_directory_uri() . '/build/index.js';
 	$entrypoint_path = get_stylesheet_directory() . '/build/index.js';
 
 	// Create stubs.
 	$window = get_window_object();
-	$v8 = get_v8( $window, $entrypoint_path, false );
-	$start = microtime( true );
+	$v8 = get_v8( $window, $entrypoint_path, true );
 	$request_cache = [];
 
 	$v8->rest_request = function ( string $path, $params ) use ( &$request_cache ) {
@@ -222,34 +231,51 @@ function server_render() : ?string {
 		$params = (array) $params;
 
 		$cache_path = $path . '?' . http_build_query( $params );
-		$request = new WP_REST_Request( 'GET', $relative_path );
-		$request->set_query_params( $params );
-		$response = rest_do_request( $request );
-		$data = $response->get_data();
-		if ( isset( $params['_embed'] ) ) {
-			$data = rest_get_server()->response_to_data( $response, $params['_embed'] );
+		$data = wp_cache_get( $cache_path, 'r-rest-cache' );
+		if ( $data === false ) {
+			error_log( 'not got cache' );
+			$request = new WP_REST_Request( 'GET', $relative_path );
+			$request->set_query_params( $params );
+			$response = rest_do_request( $request );
+			$data = $response->get_data();
+			if ( isset( $params['_embed'] ) ) {
+				$data = rest_get_server()->response_to_data( $response, $params['_embed'] );
+			}
+			wp_cache_set( $cache_path, $data, 'r-rest-cache' );
 		}
 
 		$request_cache[ $cache_path ] = $data;
 		return $data;
 	};
 	$render = null;
-	$v8->render = function ( string $body, $helmet ) use ( &$render ) {
+	$v8->render = function ( $error, string $body = '', $helmet = null ) use ( &$render ) : void {
+		if ( $error ) {
+			// For some reason, thrown errors in Async javscript don't trigger a PHP exception,
+			// so we have to manually do it here. This means the error is not very useful, but it's
+			// better than nothing.
+			throw new V8JsScriptException( $error->message );
+		}
 		$render = [
 			'body' => $body,
 			'helmet' => $helmet,
 		];
 	};
 
-	$v8->log = function ( string $type, array $message ) {
+	$v8->log = function ( string $type, array $message ) : void {
 		$message = array_map( function ( $message ) {
-			return var_export( $message, true );
+			return is_array( $message ) ? implode( ', ', $message ) : (string) $message;
 		}, $message );
+		// Ignore annoying react-router warning.
+		if ( strpos( $message[2], 'Invalid prop `path` supplied to `Route2`.' ) !== false ) {
+			return;
+		}
 		error_log( "SSR $type: " . implode( ", ", $message ) );
 	};
 
 	try {
-		$v8->executeString( 'window.render()' );
+
+		$v8->executeString( 'window.render()', 'renderer' );
+
 		if ( ! $render ) {
 			return 'No app was rendered.';
 		}
@@ -268,11 +294,13 @@ function server_render() : ?string {
 			$render['data'] = $window['WPData'];
 		}
 		ob_start();
-		include( locate_template( 'index.php' ) );
+		include( locate_template( 'render.php' ) );
 		$output = ob_get_clean();
 	} catch ( V8JsScriptException $e ) {
 		// Detect if no route can be handled by the React theme.
-		if ( strpos( $e->getMessage(), 'no-routes' ) ) {
+		if ( strpos( $e->getMessage(), 'no-routes' ) !== false ) {
+			$end = microtime(true);
+			error_log( ( $end - $start ) *1000 );
 			return null;
 		}
 
@@ -291,6 +319,8 @@ function server_render() : ?string {
 		return '';
 	}
 
+	error_log( 'Total time, theme time:' );
+	error_log( ( microtime( true ) - $_SERVER['REQUEST_TIME_FLOAT'] ) * 1000 );
 	error_log( ( microtime( true ) - $start ) * 1000 );
 
 	return $output;
@@ -335,12 +365,14 @@ function get_v8( array $window_object, string $entrypoint_path, bool $use_snapsh
 		$snapshot = get_v8_snapshot( $setup, $entrypoint_path );
 		if ( $snapshot ) {
 			$v8 = new V8Js( 'PHP', [], [], true, $snapshot );
+			// Add the new bootstrap data into the snapshop.
+			$v8->executeString( $setup, 'bootstrap.js' );
 		}
 	}
 
 	if ( ! $v8 ) {
 		$v8 = new V8Js();
-		$v8->setModuleLoader( function ( $module ) {
+		$v8->setModuleLoader( function ( string $module ) : void {
 
 		});
 		$v8->executeString( $setup, 'bootstrap.js' );
@@ -362,11 +394,15 @@ function get_bootstrap_script( array $window_object ) : string {
 // Set up browser-compatible APIs.
 var window = this;
 function serverLog( type, ...args ) {
-	// args = args.map( arg => {
-	// 	return JSON.stringify( arg, null, 4 );
-	// } );
+	args = args.map( arg => {
+		if ( typeof arg === 'object' ) {
+			return JSON.stringify( arg, null, 4 );
+		}
+		const val = String( arg );
+		return val;
+	} );
 	if ( typeof PHP !== 'undefined' && typeof PHP.log !== 'undefined' ) {
-		PHP.log( type, [ args ] );
+		PHP.log( type, args );
 	}
 }
 Object.assign( window, $window_json );
@@ -378,8 +414,8 @@ var console = {
 window.setTimeout = window.clearTimeout = () => {};
 
 // Expose more globals we might want.
-var global = global || this,
-	self = self || this;
+var global = this,
+	self = this;
 var isSSR = true;
 
 // Remove default top-level APIs.l;-po

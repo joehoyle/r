@@ -1,7 +1,7 @@
 import React, { FunctionComponent } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { Helmet } from 'react-helmet';
-import { getPropsForTemplate, getRequestForQuery, useData, getTemplatesForQuery, getCached, QueryContext, Query, useQuery, useResolvedParams } from './lib';
+import { getPropsForTemplate, getRequestForQuery, getTemplatesForQuery, QueryContext, get, Query, useQuery, getResolvedParams } from './lib';
 import render from './render';
 import * as Templates from './templates';
 import {
@@ -21,25 +21,30 @@ function Page() {
 			<meta charSet="utf-8" />
 			<title>My Theme</title>
 		</Helmet>
-		<Switch>
-			{Object.entries(rewrite).map(([regex, query]) => {
-				// Make sure start caret regex have slashes appended.
-				regex = regex.replace( '^', '^/' );
-				// @ts-ignore
-				return <Route key={regex} path={new RegExp(regex)} render={props => {
-					if ( query ) {
-						return <MatchedRoute {...props} regex={regex} query={query} />
-					} else {
-						// Empty query means this can not be handled with front-end routing, reload.
-						if ( isSSR ) {
-							throw new Error( 'no-routes' );
-						} else {
-							window.location.href = props.match.url;
-						}
-					}
-				} } />
-			})}
-		</Switch>
+
+			<Switch>
+					{Object.entries(rewrite).map(([regex, query]) => {
+						// Make sure start caret regex have slashes appended.
+						regex = regex.replace( '^', '^/' );
+						// @ts-ignore
+						return <Route key={regex} path={new RegExp(regex)} render={props => {
+							if ( query ) {
+								return <Suspense fallback={<Layout loading={ true } />}>
+									<MatchedRoute {...props} regex={regex} query={query} />
+								</Suspense>
+							} else {
+								// Empty query means this can not be handled with front-end routing, reload.
+								if ( isSSR ) {
+									throw new Error( 'no-routes' );
+								} else {
+									window.location.href = props.match.url;
+								}
+							}
+						} } />
+					})}
+			</Switch>
+
+
 	</Router>;
 }
 
@@ -74,31 +79,30 @@ function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: strin
 
 	useEffect(() => {
 		window.scrollTo(0, 0);
+		setLoading(true);
 	}, [ props.match.url ])
 	// Setup Query
-	const [ query, setQuery ] = useState<Query>( { ...props.query, match: props.match.params, regex: props.regex, loading: true } );
-
-	useEffect( () => {
-		setQuery( { ...props.query, match: props.match.params, regex: props.regex, loading: true } );
-	}, [ props.match.url ] );
-
+	const [ loading, setLoading ] = useState(true);
+	const query = { ...props.query, match: props.match.params, regex: props.regex, loading: loading, data: null, request: null };
 	const request = getRequestForQuery( query );
-	const [ loadingParams, resolvedParams, paramsError ] = useResolvedParams( request.params );
-	// If we are still loading resolved params, don't pass a url to the
-	// useData hook to no-op it.
-	if ( ! loadingParams && ! paramsError && ! query.request ) {
-		setQuery( { ...query, request: { ...request, params: resolvedParams } } );
-	}
 
-	const [ loading, data, error ] = useData( query.request?.uri, query.request?.params );
-	if ( data && ! query.data ) {
-		setQuery( { ...query, data, loading: false } );
-	}
+	query.loading = true;
 
+	// try {
+		request.params = getResolvedParams( request.params );
+		query.data = get( request.uri, request.params );
+		query.request = request;
+		query.loading = false;
+	// } catch ( promise ) {
+	// 	promise.then( () => {
+	// 		console.log( 'done promise' );
+	// 		setLoading( false );
+	// 	} );
+	// }
 	return (
 		<QueryContext.Provider value={ { ...query } }>
-			<Layout>
-				<TemplateLoader></TemplateLoader>
+			<Layout loading={ query.loading }>
+				<TemplateLoader />
 			</Layout>
 		</QueryContext.Provider>
 	)
@@ -106,18 +110,18 @@ function MatchedRoute(props: MatchedRouteProps & RouteComponentProps<{ [s: strin
 
 function TemplateLoader() {
 	let templateDataProps = {}
-	const templates = getTemplatesForQuery();
 	const query = useQuery();
 
 	if ( query.loading ) {
 		return null;
 	}
-
+	const templates = getTemplatesForQuery();
 	let Comp: FunctionComponent<{}> = () => <h1>No Template</h1>
 	let matchedTemplate = null;
 	for (let i = 0; i < templates.length; i++) {
 		const templateName = `Template${ templates[i] }`;
 		if ( typeof Templates[ templateName ] === 'undefined' ) {
+
 			continue;
 		}
 

@@ -18,6 +18,18 @@ const file = `
 ${ files.map( file => `import Template${ file } from "../../../${ file }";` ).join( '\n' ) }
 export { ${ files.map( t => `Template${ t }` ).join( ", " ) } };
 `
+// Custom plugin to force load the react-server node library and deps.
+let reactServerPlugin = {
+	name: 'example',
+	setup(build) {
+		build.onResolve({ filter: /react-dom\/server/ }, args => {
+			console.log( args );
+			return {
+				path: `${ __dirname }/../../react-dom/cjs/react-dom-server.node.development.js`,
+			}
+		});
+	},
+}
 
 fs.writeFileSync( __dirname + '/../theme/templates.ts', file );
 
@@ -29,7 +41,9 @@ esbuild.build({
 	define: { 'process.env.NODE_ENV': 'true' },
 	incremental: watch,
 	sourcemap: true,
-	target: 'es6',
+	target: 'es2018',
+	// platform: 'node',
+	plugins: [ reactServerPlugin ]
 } ).then( result => {
 	console.log( 'Build completed.' );
 	if ( watch ) {
@@ -81,92 +95,3 @@ if ( hmr ) {
 	} ).listen(3000)
 	console.log( `Listening on post 3000` );
 }
-
-return;
-
-// const target = process.argv[ 2 ];
-// const watch = process.argv.indexOf( '--watch' );
-
-// const Global = `var process = {
-// 	env: {
-// 	  NODE_ENV: 'development'
-// 	}
-// };
-// var isSSR = false;`
-
-// const projectDir = '.';
-// const inputOptions = {
-// 	input: `${__dirname}/../theme/index.tsx`,
-// 	plugins: [
-// 		typescript({
-// 			// tsconfig: `${ projectDir }/tsconfig.json`,
-// 			jsx: 'react',
-// 			rootDir: `${projectDir}/`,
-// 			tslib: require('tslib'),
-// 			typescript: require('typescript'),
-// 			paths: {
-// 				tslib: [require.resolve('tslib')],
-// 			},
-// 		}),
-// 		commonjs(),
-// 		nodeResolve({
-// 			browser: true,
-// 		}),
-// 		css({
-// 			output: 'styles.css'
-// 		})
-// 	],
-// };
-// const browserOutputOptions = {
-// 	file: './build/iife/index.js',
-// 	format: 'iife',
-// 	banner: Global,
-// 	sourcemap: true
-// };
-
-// const serverOutputOptions = {
-// 	//file: './build/cjs/index.js',
-// 	dir: './build/cjs/',
-// 	format: 'cjs',
-// 	manualChunks(id) {
-// 		if ( id.includes('node_modules') ) {
-// 			return 'vendor';
-// 		}
-// 	},
-// 	chunkFileNames: '[name].js',
-// };
-
-// const outputOptions = [];
-// if ( target === 'browser' ) {
-// 	outputOptions.push( browserOutputOptions );
-// }
-
-// if ( target === 'server' ) {
-// 	outputOptions.push( serverOutputOptions );
-// }
-
-// if ( watch ) {
-// 	const watcher = rollup.watch({
-// 		...inputOptions,
-// 		output: outputOptions,
-// 	});
-
-// 	watcher.on('event', event => {
-// 		if ( event.code === 'ERROR' ) {
-// 			console.error( event );
-// 		} else {
-// 			console.log( event.code );
-// 		}
-// 	} );
-// } else {
-// 	// rollup
-// // 	.rollup()
-// // 	.then((bundle) => {
-// // 		bundle.write();
-// // 		bundle.write();
-// // 	});
-
-
-// }
-
-
