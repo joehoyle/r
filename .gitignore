@@ -1,2 +1,5 @@
 vendor
 npm-module/node_modules
+frontity-app/node_modules
+frontity-app/build
+frontity-app/packages
