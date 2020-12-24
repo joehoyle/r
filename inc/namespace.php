@@ -86,12 +86,13 @@ function on_do_parse_request( bool $should_parse ) : bool {
 	exit;
 }
 /**
- * @return list<array{ uri: string, params: array<string, string>}>
+ * @return array<array-key, ?array{ uri: string, params: array<array-key, string>}>
  */
 function get_rewrites() {
 	global $wp_rewrite;
 	/** @var array<string, string> */
 	$rules = $wp_rewrite->wp_rewrite_rules();
+	/** @var array<string, ?array{ uri: string, params: array<array-key, string>}> */
 	$rest_rules = array_map( __NAMESPACE__ . '\\get_rest_api_query_for_rewrite_query', $rules );
 	// Add homepage
 	if ( get_option( 'show_on_front' ) === 'page' ) {
@@ -100,7 +101,7 @@ function get_rewrites() {
 			'^?$' => [
 				'uri' => get_rest_url( null, '/wp/v2/pages' ),
 				'params' => [
-					'include' => get_option( 'page_on_front' ),
+					'include' => (string) get_option( 'page_on_front' ),
 				],
 			],
 			'wp-admin/' => null,
@@ -116,7 +117,7 @@ function get_rewrites() {
  * The result will stuff have placeholders in the REST request in the form of
  * `$1` etc where a value should later be substituted.
  *
- * @return ?array{ uri: string, params: array<array-key, string>}|null
+ * @return ?array{ uri: string, params: array<array-key, string>}
  */
 function get_rest_api_query_for_rewrite_query( string $query ) : ?array {
 	$query = str_replace( 'index.php?', '', $query );
@@ -130,6 +131,9 @@ function get_rest_api_query_for_rewrite_query( string $query ) : ?array {
 	if ( ! $parts ) {
 		return null;
 	}
+
+	/** @var array<array-key, string> */
+	$parts = $parts;
 
 	$public_query_var_to_rest_param_map = [
 		'category_name' => 'category_slug',
@@ -184,20 +188,19 @@ function get_rest_api_query_for_rewrite_query( string $query ) : ?array {
  * @return array{ document: array, location: array{ hash: string, host: string, hostname: string, pathname: string, port: int, protocol:'http'|'https', search: string, href: string }, process: array{ env: string} } `window`-compatible object.
  */
 function get_window_object() : array {
-	list( $path ) = explode( '?', $_SERVER['REQUEST_URI'] );
-	$port = $_SERVER['SERVER_PORT'];
-	$query = $_SERVER['QUERY_STRING'];
+	list( $path ) = explode( '?', (string) $_SERVER['REQUEST_URI'] );
+	$query = (string) $_SERVER['QUERY_STRING'];
 	return [
 		'document' => [],
 		'location' => [
 			'hash'     => '',
-			'host'     => $_SERVER['HTTP_HOST'],
-			'hostname' => $_SERVER['HTTP_HOST'],
+			'host'     => (string) $_SERVER['HTTP_HOST'],
+			'hostname' => (string) $_SERVER['HTTP_HOST'],
 			'pathname' => $path,
 			'port'     => 80,
 			'protocol' => is_ssl() ? 'https:' : 'http:',
 			'search'   => $query ? '?' . $query : '',
-			'href'     => ( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST'] . '/' . ( $query ? '?' . $query : '' ),
+			'href'     => ( is_ssl() ? 'https://' : 'http://' ) . (string) $_SERVER['HTTP_HOST'] . '/' . ( $query ? '?' . $query : '' ),
 		],
 		'process' => [
 			'env' => 'development',
@@ -247,6 +250,7 @@ function server_render() : ?string {
 			$render['data'] = $window['WPData'];
 		}
 		ob_start();
+		/** @psalm-suppress all */
 		include( locate_template( 'render.php' ) );
 		$output = ob_get_clean();
 	} catch ( V8JsScriptException $e ) {
